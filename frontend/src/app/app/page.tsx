@@ -86,6 +86,8 @@ export default function AppPage() {
   const [pending, setPending] = useState(false);
   const [paused, setPaused] = useState(false);
   const [medOnly, setMedOnly] = useState(false);
+  const [snoozedUntil, setSnoozedUntil] = useState<Date | null>(null);
+  const [now, setNow] = useState(() => new Date());
   const triageLevel = useChatStore((s) => s.triageLevel);
 
   const form = useForm<SymptomValues>({
@@ -98,6 +100,11 @@ export default function AppPage() {
       router.push("/login");
     }
   }, [loading, router, user]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const profileQuery = useQuery({
     queryKey: ["profile", user?.uid],
@@ -206,6 +213,20 @@ export default function AppPage() {
   };
 
   const greeting = getGreeting();
+  const quietHoursWindow = { startHour: 22, endHour: 8 };
+  const isQuietHours =
+    now.getHours() >= quietHoursWindow.startHour || now.getHours() < quietHoursWindow.endHour;
+  const snoozeActive = snoozedUntil ? snoozedUntil.getTime() > now.getTime() : false;
+  const proactiveStatus = paused
+    ? "Paused"
+    : snoozeActive
+      ? "Snoozed"
+      : "Active";
+  const proactiveStatusDetail = paused
+    ? "No proactive nudges while paused."
+    : snoozeActive
+      ? `Snoozed until ${snoozedUntil?.toLocaleDateString()}.`
+      : "Proactive nudges are enabled.";
 
   const topPriority = useMemo(() => {
     const first = remindersQuery.data?.refill_reminders?.[0];
@@ -225,6 +246,8 @@ export default function AppPage() {
             <>
               <span className="status-chip status-chip--danger">Triage Live</span>
               <span className="status-chip status-chip--info">Actions Consent-Gated</span>
+              <span className="status-chip status-chip--warning">Proactive {proactiveStatus}</span>
+              {isQuietHours && <span className="status-chip status-chip--info">Quiet Hours</span>}
             </>
           }
         />
@@ -256,11 +279,19 @@ export default function AppPage() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => push({ title: "Snoozed", description: "Proactive nudges snoozed for 3 days.", variant: "info" })}
+            onClick={() => {
+              const until = new Date();
+              until.setDate(until.getDate() + 3);
+              setSnoozedUntil(until);
+              push({ title: "Snoozed", description: "Proactive nudges snoozed for 3 days.", variant: "info" });
+            }}
           >
             Snooze 3 Days
           </Button>
         </div>
+        <p className="text-xs text-[color:var(--cp-muted)]">
+          Proactive reminder controls are mostly UI state and are not fully enforced by the backend.
+        </p>
       </Card>
 
       {/* 3-column layout */}
@@ -315,8 +346,20 @@ export default function AppPage() {
             </div>
             <div className="space-y-2 text-sm text-[color:var(--cp-muted)]">
               <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
+                <span>Status</span>
+                <span className="font-mono text-xs">{proactiveStatus}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
                 <span>Quiet hours</span>
-                <span className="font-mono text-xs">10:00 PM - 8:00 AM</span>
+                <span className="font-mono text-xs">
+                  10:00 PM - 8:00 AM {isQuietHours ? "(Active)" : "(Inactive)"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
+                <span>Snooze</span>
+                <span className="font-mono text-xs">
+                  {snoozeActive ? `Until ${snoozedUntil?.toLocaleDateString()}` : "Off"}
+                </span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
                 <span>Non-urgent limit</span>
@@ -327,6 +370,7 @@ export default function AppPage() {
                 <span className="font-mono text-xs">{medOnly ? "Medication Only" : "All"}</span>
               </div>
             </div>
+            <p className="text-xs text-[color:var(--cp-muted)]">{proactiveStatusDetail}</p>
           </Card>
         </aside>
 
