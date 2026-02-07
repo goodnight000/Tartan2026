@@ -29,9 +29,6 @@ from carepilot_tools import CarePilotToolset, register_tools
 from memory import MemoryPolicyError, MemoryService, SQLiteMemoryDB, canonical_payload_hash
 from memory.time_utils import parse_iso, to_iso, utc_now
 
-CAREBASE_ONLY = os.getenv("CAREBASE_ONLY", "true").lower() in {"1", "true", "yes"}
-
-
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -67,6 +64,10 @@ def _bootstrap_local_env() -> None:
 
 
 _bootstrap_local_env()
+
+
+def _carebase_only_enabled() -> bool:
+    return os.getenv("CAREBASE_ONLY", "false").lower() in {"1", "true", "yes"}
 
 
 def _stable_id(prefix: str, value: str) -> str:
@@ -227,7 +228,7 @@ class CarePilotApp:
 
 
 def _ensure_not_carebase_only() -> None:
-    if CAREBASE_ONLY:
+    if _carebase_only_enabled():
         raise HTTPException(
             status_code=410,
             detail="Legacy memory subsystem is disabled. Use CareBase instead.",
@@ -2842,7 +2843,7 @@ def chat_stream(
     authorization: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
 ):
-    if os.getenv("CAREBASE_ONLY", "true").lower() in {"1", "true", "yes"}:
+    if _carebase_only_enabled():
         def event_stream_disabled():
             message = (
                 "Chat streaming via backend is disabled. "

@@ -17,6 +17,7 @@ import { useToast } from "@/components/ui/toast";
 import type { ActionPlan, ActionResult, TriageLevel } from "@/lib/types";
 import { addActionLog } from "@/lib/firestore";
 import { useAuthUser } from "@/lib/useAuth";
+import { getIdTokenMaybe } from "@/lib/auth-helpers";
 import { processCareBaseText, type AccessDecision } from "@/lib/carebase/engine";
 import { CareBaseGuard, type CareBaseRequest } from "@/components/CareBaseGuard";
 import { consumeSSE } from "@/lib/sse";
@@ -212,7 +213,20 @@ export function ChatPanel() {
     message: string
   ) => {
     const system = await buildSystemPrompt();
-    const requestBody = JSON.stringify({ message, history, system });
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const locationText = window.localStorage.getItem(LOCATION_STORAGE_KEY) || undefined;
+    const idToken = await getIdTokenMaybe(user);
+    const requestBody = JSON.stringify({
+      message,
+      history,
+      system,
+      session_key: sessionKey,
+      client_context: {
+        timezone,
+        location_text: locationText,
+      },
+      idToken,
+    });
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -229,7 +243,10 @@ export function ChatPanel() {
         const payload = await fallback.json().catch(() => ({}));
         throw new Error(payload.error ?? "Chat request failed.");
       }
-      const payload = (await fallback.json()) as { reply: string };
+      const payload = (await fallback.json()) as { reply: string; action_plan?: ActionPlan };
+      if (payload.action_plan) {
+        setActionPlan(payload.action_plan);
+      }
       return { reply: payload.reply ?? "", streamed: false };
     }
 
@@ -263,6 +280,21 @@ export function ChatPanel() {
             : (event.data as { message?: string }).message ?? "Chat error.";
         throw new Error(messageText);
       }
+      if (event.event === "action_plan") {
+        const plan =
+          typeof event.data === "string"
+            ? (() => {
+                try {
+                  return JSON.parse(event.data) as ActionPlan;
+                } catch {
+                  return null;
+                }
+              })()
+            : (event.data as ActionPlan);
+        if (plan && typeof plan.tool === "string" && plan.params && typeof plan.params === "object") {
+          setActionPlan(plan);
+        }
+      }
     });
 
     return { reply: fullContent, streamed };
@@ -271,6 +303,10 @@ export function ChatPanel() {
   const handleSend = async () => {
     if (!input.trim() || pending) return;
     const content = input.trim();
+    const locationHint = inferLocationHint(content);
+    if (locationHint) {
+      window.localStorage.setItem(LOCATION_STORAGE_KEY, locationHint);
+    }
     const priorMessages = useChatStore.getState().messages;
     setInput("");
     appendMessage({ role: "user", content });
