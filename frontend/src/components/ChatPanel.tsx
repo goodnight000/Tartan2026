@@ -656,7 +656,7 @@ export function ChatPanel() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.2 }}
                     aria-live={msg.isStreaming ? "off" : undefined}
-                    className={`max-w-[95%] rounded-2xl border px-4 py-3 text-sm ${
+                    className={`max-w-[95%] whitespace-pre-wrap break-words rounded-2xl border px-4 py-3 text-sm ${
                       msg.role === "user"
                         ? "ml-auto border-[color:var(--cp-primary)]/55 bg-[color:var(--cp-primary)] text-white"
                         : msg.role === "system"
