@@ -458,6 +458,29 @@ def test_booking_slot_fill_completes_after_user_provides_missing_fields(client, 
     assert plan["params"]["slot_datetime"]
 
 
+def test_booking_location_omits_temporal_suffix_from_user_message(client, auth_headers):
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload(
+            (
+                "Book Quest Diagnostics in Pittsburgh next Tuesday at 9am. "
+                "Booking URL is https://example.com/booking. "
+                "My name is Jane Doe. Email jane@example.com. Phone 4125551212."
+            )
+        ),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    plan = _first_action_plan(events)
+    assert plan is not None
+    assert plan["tool"] == "appointment_book"
+    location = str(plan["params"]["location"]).lower()
+    assert "pittsburgh" in location
+    assert "next" not in location
+    assert "am" not in location
+
+
 def test_booking_slot_fill_can_be_cancelled(client, auth_headers):
     client.post(
         "/chat/stream",

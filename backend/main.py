@@ -162,14 +162,6 @@ class CarePilotApp:
             lifecycle=ActionLifecycleService(self.db),
         )
 
-
-def _ensure_not_carebase_only() -> None:
-    if CAREBASE_ONLY:
-        raise HTTPException(
-            status_code=410,
-            detail="Legacy memory subsystem is disabled. Use CareBase instead.",
-        )
-
     def _before_tool_call(
         self,
         ctx: ExecutionContext,
@@ -232,6 +224,14 @@ def _ensure_not_carebase_only() -> None:
             token = payload.get("consent_token")
             if token:
                 self.memory.clinical.mark_consent_token_used(token)
+
+
+def _ensure_not_carebase_only() -> None:
+    if CAREBASE_ONLY:
+        raise HTTPException(
+            status_code=410,
+            detail="Legacy memory subsystem is disabled. Use CareBase instead.",
+        )
 
 
 container = CarePilotApp()
@@ -1242,6 +1242,37 @@ _WEEKDAY_INDEX = {
     "sunday": 6,
 }
 
+_TEMPORAL_LOCATION_TOKEN_RE = re.compile(
+    r"\b(?:"
+    r"today|tomorrow|tonight|"
+    r"this\s+(?:morning|afternoon|evening|week)|"
+    r"next\s+(?:week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+    r"\d{1,2}(?::\d{2})?\s*(?:am|pm)|"
+    r"morning|afternoon|evening|night"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+_TRAILING_LOCATION_CONNECTOR_RE = re.compile(r"\b(?:at|on|for|by|around|near|in)\s*$", flags=re.IGNORECASE)
+
+
+def _sanitize_location_candidate(candidate: str) -> str | None:
+    text = re.sub(r"\s+", " ", candidate or "").strip(" .,-")
+    if not text:
+        return None
+
+    temporal_match = _TEMPORAL_LOCATION_TOKEN_RE.search(text)
+    if temporal_match:
+        text = text[: temporal_match.start()].strip(" .,-")
+    text = _TRAILING_LOCATION_CONNECTOR_RE.sub("", text).strip(" .,-")
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered in {"the", "a", "an"}:
+        return None
+    return text
+
 
 def _preference_value_by_key(context: dict[str, Any], key: str) -> dict[str, Any] | None:
     conversational = context.get("conversational", {})
@@ -1329,15 +1360,21 @@ def _extract_location_from_text(message: str) -> str | None:
         flags=re.IGNORECASE,
     )
     if match:
-        candidate = re.sub(r"\s+", " ", match.group(1)).strip(" .")
+        candidate = _sanitize_location_candidate(match.group(1))
+        if not candidate:
+            return None
         lowered = candidate.lower()
         if candidate and lowered not in {"the morning", "the afternoon", "the evening", "next week"}:
             return candidate
 
     # Support short bare location replies like "Pittsburgh" when this turn is likely filling a location slot.
     if re.fullmatch(r"[A-Za-z][A-Za-z .,\'-]{1,80}", text):
-        candidate = re.sub(r"\s+", " ", text).strip(" .")
+        candidate = _sanitize_location_candidate(text)
+        if not candidate:
+            return None
         lowered = candidate.lower()
+        if re.search(r"\b(book|appointment|schedule)\b", lowered):
+            return None
         if any(token in lowered for token in ["option", "first", "second", "third", "fourth", "fifth"]):
             return None
         if lowered.startswith(("open ", "pick ", "choose ", "select ")):
@@ -1358,13 +1395,48 @@ def _extract_location_from_text(message: str) -> str | None:
             "tomorrow",
             "today",
             "next week",
+            "next month",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+            "tonight",
             "morning",
             "afternoon",
             "evening",
+            "night",
         }
         if lowered not in stopwords and len(lowered.split()) <= 4:
             return candidate
     return None
+
+
+_URGENT_TRIAGE_HINT_RE = re.compile(
+    r"\b(?:"
+    r"high fever|persistent fever|"
+    r"severe pain|worsening pain|"
+    r"fainting|syncope|"
+    r"shortness of breath|difficulty breathing|"
+    r"vomiting|dehydration|"
+    r"blood pressure|hypertension spike|"
+    r"infection|urgent care"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _triage_tier_from_text(message: str) -> str:
+    text = (message or "").strip()
+    if not text:
+        return "ROUTINE"
+    if container.policy.is_emergency_text(text):
+        return "EMERGENT"
+    if _URGENT_TRIAGE_HINT_RE.search(text):
+        return "URGENT_24H"
+    return "ROUTINE"
 
 
 def _needs_location_reprompt(message: str, history: list[dict[str, str]]) -> bool:
@@ -2551,6 +2623,8 @@ async def voice_transcribe(
     )
     confidence = max(0.0, min(1.0, float(transcription.get("confidence", 0.8))))
     transcript_text = str(transcription["transcript_text"])
+    triage_tier = _triage_tier_from_text(transcript_text)
+    emergency_detected = triage_tier == "EMERGENT"
     findings = [
         {
             "finding_type": "voice_transcript",
@@ -2578,6 +2652,9 @@ async def voice_transcribe(
             "segment_count": len(transcription.get("segments", [])),
             "provider": "openai_whisper",
             "language_hint": language_hint,
+            "triage_tier": triage_tier,
+            "emergency_detected": emergency_detected,
+            "requires_confirmation": True,
         },
         findings=findings,
     )
@@ -2586,6 +2663,13 @@ async def voice_transcribe(
         "transcript_text": transcript_text,
         "confidence": confidence,
         "segments": transcription.get("segments", []),
+        "triage": {
+            "tier": triage_tier,
+            "emergency": emergency_detected,
+        },
+        "requires_confirmation": True,
+        "editable_transcript": True,
+        "next_step": "review_or_edit_transcript_before_chat_send",
     }
 
 
