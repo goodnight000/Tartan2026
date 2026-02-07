@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, FileUp } from "lucide-react";
+import { Send, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ActionConfirmModal } from "@/components/ActionConfirmModal";
@@ -85,7 +85,10 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [actionPending, setActionPending] = useState(false);
-  const [mode, setMode] = useState<"type" | "voice" | "document">("type");
+  const [mode, setMode] = useState<"type" | "document">("type");
+  const [voiceStatus, setVoiceStatus] = useState<{ message: string; isError: boolean } | null>(
+    null
+  );
   const [guardRequest, setGuardRequest] = useState<CareBaseRequest | null>(null);
   const [guardOpen, setGuardOpen] = useState(false);
   const decisionRef = useRef<((decision: AccessDecision) => void) | null>(null);
@@ -145,8 +148,9 @@ export function ChatPanel() {
   }, []);
 
   const modeHint = useMemo(() => {
-    if (mode === "voice") return "Voice capture will transcribe to editable text before send.";
-    if (mode === "document") return "Upload lab or imaging reports for extraction and plain-language interpretation.";
+    if (mode === "document") {
+      return "Upload lab or imaging reports for extraction and plain-language interpretation.";
+    }
     return "Ask a question, report symptoms, or request a care coordination action.";
   }, [mode]);
 
@@ -375,29 +379,6 @@ export function ChatPanel() {
           </div>
         </div>
 
-        {/* Mode selector */}
-        <div className="rounded-2xl border border-[color:var(--cp-line)] bg-white/70 p-2">
-          <div className="grid grid-cols-3 gap-2">
-            {([
-              ["type", "Type", null],
-              ["voice", "Voice", <Mic key="mic" className="h-3.5 w-3.5" />],
-              ["document", "Document", <FileUp key="doc" className="h-3.5 w-3.5" />],
-            ] as const).map(([value, label, icon]) => (
-              <Button
-                key={value}
-                type="button"
-                variant={mode === value ? "default" : "ghost"}
-                size="sm"
-                icon={icon}
-                onClick={() => setMode(value)}
-                aria-label={`${label} input mode`}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-        </div>
-
         <p className="text-sm text-[color:var(--cp-muted)]">{modeHint}</p>
 
         {/* Action staged banner */}
@@ -473,34 +454,27 @@ export function ChatPanel() {
         />
 
         {/* Input area */}
-        {mode === "voice" && (
-          <div className="flex items-center gap-3">
-            <VoiceInputButton
-              sessionKey={sessionKey}
-              onTranscript={(text) => {
-                setInput(text);
-                setMode("type");
-              }}
-            />
-            <span className="text-xs text-[color:var(--cp-muted)]">Tap mic, speak, then edit before sending</span>
-          </div>
-        )}
-
-        {mode === "document" && (
-          <DocumentUploadFlow
+        <div className="flex flex-wrap items-end gap-2">
+          <Button
+            type="button"
+            variant={mode === "document" ? "default" : "outline"}
+            size="sm"
+            icon={<FileUp className="h-4 w-4" aria-hidden="true" />}
+            onClick={() => setMode(mode === "document" ? "type" : "document")}
+            aria-label={mode === "document" ? "Close document upload" : "Upload a document"}
+            className="shrink-0"
+          >
+            Document
+          </Button>
+          <VoiceInputButton
             sessionKey={sessionKey}
-            onComplete={(result: DocumentUploadResult) => {
-              appendMessage({
-                role: "user",
-                content: `Uploaded ${result.docType}: ${result.fileName}`,
-              });
-              appendMessage({ role: "assistant", content: result.messageForChat });
+            onTranscript={(text) => {
+              setInput(text);
               setMode("type");
             }}
+            showStatusText={false}
+            onStatusChange={(payload) => setVoiceStatus(payload)}
           />
-        )}
-
-        <div className="flex gap-2">
           <textarea
             ref={textareaRef}
             placeholder={mode === "type" ? "Ask CarePilot..." : "Compose from transcript or extracted report..."}
@@ -526,6 +500,31 @@ export function ChatPanel() {
             <Send className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
+        {voiceStatus?.message && (
+          <p
+            className={`text-xs ${
+              voiceStatus.isError
+                ? "text-[color:var(--cp-danger)]"
+                : "text-[color:var(--cp-muted)]"
+            }`}
+          >
+            {voiceStatus.message}
+          </p>
+        )}
+
+        {mode === "document" && (
+          <DocumentUploadFlow
+            sessionKey={sessionKey}
+            onComplete={(result: DocumentUploadResult) => {
+              appendMessage({
+                role: "user",
+                content: `Uploaded ${result.docType}: ${result.fileName}`,
+              });
+              appendMessage({ role: "assistant", content: result.messageForChat });
+              setMode("type");
+            }}
+          />
+        )}
       </Card>
 
       <ActionConfirmModal
