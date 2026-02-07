@@ -86,6 +86,7 @@ function stripCareBaseTags(text: string): string {
       break;
     }
     out += text.slice(i, openIndex);
+    if (out && !out.endsWith(" ")) out += " ";
 
     const closeStart = lower.indexOf("</carebase-", openIndex);
     if (closeStart === -1) {
@@ -101,6 +102,37 @@ function stripCareBaseTags(text: string): string {
   return out.replace(/\s{2,}/g, " ").trim();
 }
 
+function splitAroundCareBaseTags(text: string): { before: string; after: string; hasTag: boolean } {
+  const lower = text.toLowerCase();
+  const openIndex = lower.indexOf("<carebase-");
+  if (openIndex === -1) {
+    return { before: stripCareBaseTags(text), after: "", hasTag: false };
+  }
+  const closeIndex = lower.lastIndexOf("</carebase-");
+  if (closeIndex === -1) {
+    return { before: stripCareBaseTags(text.slice(0, openIndex)), after: "", hasTag: true };
+  }
+  const closeEnd = lower.indexOf(">", closeIndex);
+  if (closeEnd === -1) {
+    return { before: stripCareBaseTags(text.slice(0, openIndex)), after: "", hasTag: true };
+  }
+  const before = stripCareBaseTags(text.slice(0, openIndex));
+  const after = stripCareBaseTags(text.slice(closeEnd + 1));
+  return { before, after, hasTag: true };
+}
+
+function displaySegments(
+  content: string,
+  isStreaming: boolean,
+  hideCommands: boolean
+): string[] {
+  if (!hideCommands) return [content];
+  const split = splitAroundCareBaseTags(content);
+  if (!split.hasTag) return [stripCareBaseTags(content)];
+  if (!split.after) return [split.before];
+  return [split.before, split.after];
+}
+
 export function ChatPanel() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
@@ -109,6 +141,7 @@ export function ChatPanel() {
   const [voiceStatus, setVoiceStatus] = useState<{ message: string; isError: boolean } | null>(
     null
   );
+  const [hideCommands, setHideCommands] = useState(true);
   const [guardRequest, setGuardRequest] = useState<CareBaseRequest | null>(null);
   const [guardOpen, setGuardOpen] = useState(false);
   const decisionRef = useRef<((decision: AccessDecision) => void) | null>(null);
@@ -187,7 +220,7 @@ export function ChatPanel() {
       "CareBase Context:",
       `Current datetime: ${now}.`,
       `Current user id: ${user?.uid ?? "unknown"}.`,
-      "Log any patient detail that could help future diagnosis using CareBase tags.",
+      "Proactively log any patient detail that could help future diagnosis using CareBase tags, even if it seems minor.",
       "Use absolute timestamps only when storing time.",
       "Store structured app memory in CareBase too.",
       "Profiles: use <carebase-store: profile:{user_id}> with JSON.",
@@ -196,6 +229,10 @@ export function ChatPanel() {
       "Check-ins: append to <carebase-store: symptom_logs:{user_id}> as JSON array; never overwrite existing logs.",
       "Actions/refills: append to <carebase-store: action_logs:{user_id}> as JSON array with action_type; never overwrite existing logs.",
       "Replace {user_id} with the current user id above when forming keys.",
+      "You may create custom CareBase keys when needed; if you do, add them to <carebase-store: entry_index:{user_id}> as a JSON map of key -> description.",
+      "When you include a CareBase tag, put the tag on its own line.",
+      "Never place normal text immediately before or after a CareBase tag on the same line.",
+      "If you continue after a CareBase tag, add a blank line after the closing tag before any further text.",
       "If you request CareBase data, STOP your response and wait for the CareBase result before answering.",
       "When you need data, output ONLY the CareBase fetch tag and no other text.",
       "Always store any clinically relevant user facts using <carebase-store: ...> tags; do not claim you stored data unless the tag is present.",
@@ -359,8 +396,8 @@ export function ChatPanel() {
           break;
         }
 
-        const carebaseText = carebaseResult.responses.join("\n");
-        currentMessage = `CareBase Result:\n${carebaseText}`;
+            const carebaseText = carebaseResult.responses.join("\n");
+            currentMessage = `CareBase Result:\n${carebaseText}`;
       }
     } catch (error) {
       appendMessage({ role: "system", content: `Connection error: ${(error as Error).message}` });
@@ -422,6 +459,14 @@ export function ChatPanel() {
             <h2 className="text-3xl leading-none">Clinical Dialogue</h2>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={hideCommands ? "ghost" : "default"}
+              onClick={() => setHideCommands((prev) => !prev)}
+            >
+              {hideCommands ? "show raw message" : "hide raw message"}
+            </Button>
             {triageLevel && <TriageBadge level={triageLevel} />}
             {!triageLevel && <span className="status-chip status-chip--info">Triage Active</span>}
           </div>
@@ -460,36 +505,43 @@ export function ChatPanel() {
             <AnimatePresence>
               {messages
                 .filter((msg) => msg.role !== "carebase")
-                .map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className={`max-w-[95%] rounded-2xl border px-4 py-3 text-sm ${
-                    msg.role === "user"
-                      ? "ml-auto border-[color:var(--cp-primary)]/55 bg-[color:var(--cp-primary)] text-white"
-                      : msg.role === "system"
-                        ? "border-[color:var(--cp-danger)]/45 bg-[color:color-mix(in_srgb,var(--cp-danger)_10%,white_90%)]"
-                        : "border-[color:var(--cp-line)] bg-white"
-                  }`}
-                >
-                  {msg.role === "assistant" ? (
-                    <Markdown
-                      content={stripCareBaseTags(msg.content)}
-                    />
-                  ) : (
-                    msg.content
-                  )}
-                  <div
-                    className={`mt-1 text-[10px] ${
-                      msg.role === "user" ? "text-white/60" : "text-[color:var(--cp-muted)]"
-                    }`}
-                  >
-                    {formatTimestamp(msg.timestamp)}
-                  </div>
-                </motion.div>
-              ))}
+                .map((msg, index) => {
+                  const prev = messages[index - 1];
+                  const extraSpacing = prev?.role === "assistant" && msg.role === "assistant";
+                  const segments =
+                    msg.role === "assistant"
+                      ? displaySegments(msg.content, Boolean(msg.isStreaming), hideCommands)
+                      : [msg.content];
+                  return segments.map((segment, segmentIndex) => {
+                    const isAssistant = msg.role === "assistant";
+                    const segmentSpacing =
+                      segmentIndex > 0 || (segmentIndex === 0 && extraSpacing);
+                    return (
+                      <motion.div
+                        key={`${msg.id}-${segmentIndex}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={`max-w-[95%] rounded-2xl border px-4 py-3 text-sm ${
+                          msg.role === "user"
+                            ? "ml-auto border-[color:var(--cp-primary)]/55 bg-[color:var(--cp-primary)] text-white"
+                            : msg.role === "system"
+                              ? "border-[color:var(--cp-danger)]/45 bg-[color:color-mix(in_srgb,var(--cp-danger)_10%,white_90%)]"
+                              : "border-[color:var(--cp-line)] bg-white"
+                        } ${segmentSpacing ? "mt-3" : ""}`}
+                      >
+                        {isAssistant ? <Markdown content={segment} /> : segment}
+                        <div
+                          className={`mt-1 text-[10px] ${
+                            msg.role === "user" ? "text-white/60" : "text-[color:var(--cp-muted)]"
+                          }`}
+                        >
+                          {formatTimestamp(msg.timestamp)}
+                        </div>
+                      </motion.div>
+                    );
+                  });
+                })}
             </AnimatePresence>
           )}
           {isThinking && <ThinkingIndicator />}

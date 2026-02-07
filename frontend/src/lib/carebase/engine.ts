@@ -52,7 +52,6 @@ export async function processCareBaseText(
       };
       await putRecord(record);
       await syncRecordToCloud(record);
-      responses.push(formatResponse(command.key, 'Success: stored'));
       continue;
     }
 
