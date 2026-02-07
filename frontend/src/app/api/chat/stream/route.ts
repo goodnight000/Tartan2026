@@ -1,81 +1,169 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAdminAuth } from "@/lib/firebase-admin";
+import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
 
-const BACKEND_URL = (process.env.BACKEND_URL || "http://localhost:8000").replace(/\/+$/, "");
-const BACKEND_CHAT_STREAM_PATH = process.env.BACKEND_CHAT_STREAM_PATH || "/chat/stream";
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+const ANTHROPIC_MAX_TOKENS = Number.parseInt(process.env.ANTHROPIC_MAX_TOKENS || "2000", 10);
+const SAFE_MAX_TOKENS = Number.isFinite(ANTHROPIC_MAX_TOKENS) && ANTHROPIC_MAX_TOKENS > 0
+  ? ANTHROPIC_MAX_TOKENS
+  : 2000;
 
-function asNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : undefined;
-}
+const encoder = new TextEncoder();
 
-function normalizePath(path: string): string {
-  return path.startsWith("/") ? path : `/${path}`;
-}
-
-function stripIdToken(body: unknown): unknown {
-  if (!body || typeof body !== "object") return body;
-  return Object.fromEntries(
-    Object.entries(body as Record<string, unknown>).filter(
-      ([key]) => key !== "idToken" && key !== "id_token"
-    )
-  );
+function sseEvent(event: string, data: unknown): Uint8Array {
+  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 export async function POST(req: NextRequest) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return new Response(JSON.stringify({ message: "Missing ANTHROPIC_API_KEY" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const payload = await req.json().catch(() => null);
   if (!payload?.message || typeof payload.message !== "string") {
-    return NextResponse.json({ message: "Missing message" }, { status: 400 });
+    return new Response(JSON.stringify({ message: "Missing message" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const idToken =
-    asNonEmptyString((payload as { idToken?: unknown }).idToken) ??
-    asNonEmptyString((payload as { id_token?: unknown }).id_token);
+  const history = Array.isArray(payload.history) ? payload.history : [];
+  const systemFromClient = typeof payload.system === "string" ? payload.system : "";
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-  };
+  const systemPrompt = [
+    "You are a clinical assistant.",
+    "Use CareBase XML tags to store any patient details that could help future medical diagnosis.",
+    "Proactively log relevant clinical facts even if the user does not explicitly ask you to store them.",
+    "Store symptoms, conditions, medications, allergies, vitals, test results, timelines, family history, and care preferences when mentioned.",
+    "Use only absolute timestamps (include date and time with timezone) when storing time information.",
+    "Do not store relative times like 'yesterday' or 'last week'.",
+    "If you need stored info, fetch it using CareBase tags.",
+    "You must not claim access to any memory system other than CareBase.",
+    "Do not reference backend memory, database profiles, or external memory tools.",
+    "If you need memory, use CareBase tags and wait for results.",
+    "When you request CareBase data, STOP your response and wait for the CareBase result before answering.",
+    "If you need data, output ONLY the CareBase fetch tag and nothing else.",
+    "Always store clinically relevant user facts using <carebase-store: ...> tags; do not claim you stored data unless the tag is present.",
+    "Entry guide: profile:{user_id} = demographics, conditions, allergies, meds, procedures, family_history, preferences, reminders.",
+    "Entry guide: symptom_logs:{user_id} = array of symptom entries; action_logs:{user_id} = array of action/refill entries. Always append new items; never overwrite existing logs.",
+    "Maintain an index of custom keys you create in <carebase-store: entry_index:{user_id}> as JSON mapping of key -> description.",
+    "Profile format (JSON, arrays of objects): {consent:{health_data_use,accepted_at,privacy_version},profile_mode:{managing_for,dependent_label,relationship},demographics:{first_name,year_of_birth,sex_assigned_at_birth,height_cm,weight_kg},lifestyle:{smoking_status,alcohol_use,activity_level},conditions:[{name,diagnosed_year,under_treatment}],procedures:[{name,approximate_year}],meds:[{name,dose,frequency_per_day,cadence,start_date,last_fill_date,refill_days}],allergies:[{allergen,reaction,category}],family_history:{heart_disease,stroke,diabetes,cancer,hypertension,none_or_unsure},preferences:{radius_miles,preferred_pharmacy,preferred_days,appointment_windows,provider_gender_preference,care_priority},reminders:{med_runout,checkup_due,followup_nudges,reminder_mode,proactive_state,quiet_hours:{start,end}},onboarding:{completed,completed_at,step_last_seen,version},updated_at}.",
+    "Symptom log format (array items): {created_at, symptom_text, severity, onset_time, notes}. Severity must be an integer (0-10). Use ISO timestamps.",
+    "Action log format (array items): {created_at, action_type, status}. Use ISO timestamps.",
+    "Always include CareBase tags immediately after the sentence that justifies storing or fetching.",
+    "Example: \"You mentioned a penicillin allergy. <carebase-store: allergies>Penicillin</carebase-store>\"",
+    "Example: \"Let me check your medications. <carebase-fetch>medications</carebase-fetch>\"",
+    systemFromClient,
+  ].filter(Boolean).join("\n");
 
-  let userId: string | null = null;
-  if (idToken) {
-    try {
-      const decoded = await getAdminAuth().verifyIdToken(idToken);
-      userId = decoded.uid;
-    } catch {
-      // Invalid token handling is delegated to backend auth.
-    }
-    headers.Authorization = `Bearer ${idToken}`;
-  }
-  if (userId) headers["X-User-Id"] = userId;
+  const messages = [
+    ...history.map((item: { role: string; content: string }) => ({
+      role: item.role === "assistant" ? "assistant" : "user",
+      content: item.content,
+    })),
+    { role: "user", content: payload.message },
+  ];
 
-  const upstream = await fetch(`${BACKEND_URL}${normalizePath(BACKEND_CHAT_STREAM_PATH)}`, {
+  const upstream = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
-    headers,
-    body: JSON.stringify(stripIdToken(payload)),
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      messages,
+      temperature: 0.2,
+      max_tokens: SAFE_MAX_TOKENS,
+      stream: true,
+      system: systemPrompt,
+    }),
   });
 
-  if (!upstream.ok) {
+  if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
-    return NextResponse.json(
-      { message: detail || "Backend stream request failed." },
-      { status: upstream.status || 502 }
-    );
+    return new Response(JSON.stringify({ message: detail || "Upstream error" }), {
+      status: upstream.status || 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  if (!upstream.body) {
-    return NextResponse.json({ message: "Backend stream returned no body." }, { status: 502 });
-  }
+  let fullText = "";
 
-  const contentType = upstream.headers.get("content-type") || "text/event-stream";
-  return new Response(upstream.body, {
-    status: 200,
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = upstream.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            const chunk = buffer.slice(0, boundary).trim();
+            buffer = buffer.slice(boundary + 2);
+
+            if (!chunk) {
+              boundary = buffer.indexOf("\n\n");
+              continue;
+            }
+
+            const lines = chunk.split("\n");
+            const dataLines = lines
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => line.replace(/^data:\s*/, ""));
+            const data = dataLines.join("\n").trim();
+            if (!data) {
+              boundary = buffer.indexOf("\n\n");
+              continue;
+            }
+
+            let parsed: any = null;
+            try {
+              parsed = JSON.parse(data);
+            } catch {
+              parsed = null;
+            }
+
+            const eventType = parsed?.type;
+            if (eventType === "error") {
+              controller.enqueue(sseEvent("error", { message: parsed?.error?.message ?? "Stream error" }));
+            }
+            if (eventType === "content_block_delta") {
+              const delta = parsed?.delta?.text ?? "";
+              if (delta) {
+                fullText += delta;
+                controller.enqueue(sseEvent("token", { delta }));
+              }
+            }
+
+            boundary = buffer.indexOf("\n\n");
+          }
+        }
+
+        controller.enqueue(sseEvent("message", { text: fullText }));
+        controller.close();
+      } catch (error) {
+        controller.enqueue(sseEvent("error", { message: "Stream error" }));
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
     headers: {
-      "Content-Type": contentType,
+      "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     },
