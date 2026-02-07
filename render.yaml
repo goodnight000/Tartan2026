@@ -9,23 +9,3 @@ services:
     envVars:
       - key: ALLOW_ANON
         value: "true"
-
-  - type: web
-    name: carepilot-carebase
-    runtime: docker
-    dockerContext: .
-    dockerfilePath: carebase_server/Dockerfile
-    autoDeploy: true
-    envVars:
-      - key: PORT
-        value: "3100"
-
-  - type: web
-    name: carepilot-frontend
-    runtime: docker
-    dockerContext: .
-    dockerfilePath: frontend/Dockerfile
-    autoDeploy: true
-    envVars:
-      - key: BACKEND_URL
-        value: "https://carepilot-backend.onrender.com"
