@@ -59,9 +59,6 @@ export default function RootLayout({
                 </nav>
                 <div className="flex items-center gap-3">
                   <TrustBadge />
-                  <a className="emergency-link" href="tel:911" aria-label="Emergency: Call 911">
-                    Emergency: 911
-                  </a>
                 </div>
               </div>
             </header>
@@ -70,8 +67,7 @@ export default function RootLayout({
             </main>
             <footer className="app-footer" role="contentinfo">
               <p>
-                CarePilot is not a substitute for professional medical advice.{" "}
-                <a href="tel:911">In an emergency, call 911</a>.{" "}
+                CarePilot is not a substitute for professional medical advice. In an emergency, call 911.{" "}
                 <Link href="/profile">Privacy & Data Controls</Link>
               </p>
             </footer>
