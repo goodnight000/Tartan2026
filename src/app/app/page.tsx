@@ -84,7 +84,11 @@ export default function AppPage() {
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       body: JSON.stringify({
-        message
+        message,
+        history: useChatStore.getState().messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content
+        }))
       })
     });
 

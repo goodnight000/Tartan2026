@@ -1,96 +1,46 @@
 import { NextRequest } from "next/server";
+import Dedalus from "dedalus-labs";
+import { DedalusRunner } from "dedalus-labs";
 
 export const runtime = "nodejs";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export async function POST(req: NextRequest) {
-  const { message } = (await req.json()) as { message: string };
+  const { message, history } = (await req.json()) as {
+    message: string;
+    history?: Array<{ role: string; content: string }>;
+  };
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const baseUrl = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
-  const model = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
-  const siteUrl = process.env.OPENROUTER_SITE_URL;
-  const appName = process.env.OPENROUTER_APP_NAME || "MedClaw";
-
+  const apiKey = process.env.DEDALUS_API_KEY;
   if (!apiKey) {
     return new Response(
-      JSON.stringify({ message: "Missing OPENROUTER_API_KEY" }),
+      JSON.stringify({ message: "Missing DEDALUS_API_KEY" }),
       { status: 500 }
     );
   }
 
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json"
-  };
-  if (siteUrl) headers["HTTP-Referer"] = siteUrl;
-  if (appName) headers["X-Title"] = appName;
+  const client = new Dedalus({ apiKey });
+  const runner = new DedalusRunner(client);
 
-  const upstream = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      model,
-      stream: true,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are MedClaw, a careful medical assistant. Be concise and ask clarifying questions."
-        },
-        { role: "user", content: message }
-      ]
-    })
+  const transcript = [...(history ?? []), { role: "user", content: message }]
+    .map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`)
+    .join("\n");
+
+  const response = await runner.run({
+    input: `Use the following conversation history to respond.\n\n${transcript}`,
+    model: process.env.DEDALUS_MODEL || "anthropic/claude-opus-4-5"
   });
 
-  if (!upstream.ok || !upstream.body) {
-    const text = await upstream.text();
-    return new Response(text, { status: upstream.status });
-  }
+  const finalText = response.finalOutput || "";
 
   const stream = new ReadableStream({
-    async start(controller) {
-      const reader = upstream.body!.getReader();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let idx = buffer.indexOf("\n");
-        while (idx !== -1) {
-          const line = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 1);
-
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") {
-              controller.close();
-              return;
-            }
-            try {
-              const json = JSON.parse(data) as {
-                choices?: Array<{ delta?: { content?: string } }>;
-              };
-              const delta = json.choices?.[0]?.delta?.content || "";
-              if (delta) {
-                controller.enqueue(
-                  encoder.encode(
-                    `event: token\ndata: ${JSON.stringify({ delta })}\n\n`
-                  )
-                );
-              }
-            } catch {
-              // ignore parse errors
-            }
-          }
-          idx = buffer.indexOf("\n");
-        }
-      }
-
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          `event: message\ndata: ${JSON.stringify({ text: finalText })}\n\n`
+        )
+      );
       controller.close();
     }
   });

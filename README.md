@@ -19,6 +19,8 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 OPENROUTER_API_KEY=your_openrouter_key
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=openai/gpt-4o-mini
+DEDALUS_API_KEY=your_dedalus_key
+DEDALUS_MODEL=anthropic/claude-opus-4-5
 ```
 
 3. Run dev server
@@ -33,10 +35,8 @@ npm run dev
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+uv sync
+uv run uvicorn main:app --reload --port 8000
 ```
 
 确保 `.env.local` 里 `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`。
@@ -52,9 +52,8 @@ uvicorn main:app --reload --port 8000
 - `GOOGLE_PLACES_API_KEY=...`
 
 前端内嵌聊天（Next.js API route）需要：
-- `OPENROUTER_API_KEY`
-- `OPENROUTER_BASE_URL`（可选）
-- `OPENROUTER_MODEL`（可选）
+- `DEDALUS_API_KEY`
+- `DEDALUS_MODEL`（可选）
 
 ## Pages
 

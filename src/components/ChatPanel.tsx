@@ -34,7 +34,11 @@ export function ChatPanel() {
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         body: JSON.stringify({
-          message: content
+          message: content,
+          history: messages.map((msg) => ({
+            role: msg.role,
+            content: msg.content
+          }))
         })
       });
 
