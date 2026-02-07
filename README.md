@@ -9,7 +9,17 @@
 
 ## Quick Start
 
-### 1) Backend
+### Docker (recommended)
+
+```bash
+docker compose up --build
+```
+
+Frontend: http://localhost:3000  
+Backend: http://localhost:8000/docs  
+CareBase: http://localhost:3100
+
+### Local dev (optional)
 
 ```bash
 cd backend
@@ -17,8 +27,6 @@ cp .env.example .env
 uv sync
 uv run uvicorn main:app --reload --port 8000
 ```
-
-### 2) Frontend
 
 ```bash
 cd frontend
@@ -56,6 +64,11 @@ Backend env bootstrap now reads:
 Note: `scripts/dev-up.sh` will prefer `backend/.venv/bin/python` when that venv exists.
 `app/.env` is no longer loaded by backend runtime.
 
+Docker:
+  docker compose up --build
+  docker compose down
+
+
 Optional env:
 ```
 ALLOW_ANON=true
@@ -63,11 +76,4 @@ ANTHROPIC_API_KEY=your_anthropic_key
 ANTHROPIC_MODEL=claude-sonnet-4-5
 GOOGLE_PLACES_API_KEY=your_google_places_key
 CAREBASE_ONLY=true
-```
-
-## Optional: MCP Google Maps
-
-```bash
-npm install -g @cablate/mcp-google-map
-mcp-google-map --port 3000 --apikey "YOUR_GOOGLE_MAPS_API_KEY"
 ```
