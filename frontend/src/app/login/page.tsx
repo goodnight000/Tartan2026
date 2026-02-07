@@ -61,7 +61,7 @@ export default function LoginPage() {
       if (profile?.onboarding?.completed) {
         router.push("/app");
       } else {
-        push({ title: "Finish your profile", description: "Complete details in the Trust Center.", variant: "info" });
+        push({ title: "Finish your profile", description: "Complete details in the Profile.", variant: "info" });
         router.push("/profile");
       }
     } catch (error) {

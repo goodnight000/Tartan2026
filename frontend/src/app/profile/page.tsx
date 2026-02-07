@@ -291,7 +291,7 @@ export default function ProfilePage() {
       {/* Header */}
       <Card className="reveal space-y-4 p-7">
         <PageHeader
-          eyebrow="Trust Center"
+          eyebrow="Profile"
           title="Profile, Permissions, and Receipts"
           subtitle="Inspect the exact data used in care decisions, review action history, and control your privacy posture."
         />
@@ -534,7 +534,7 @@ export default function ProfilePage() {
             <EmptyState
               icon={FileText}
               title="No profile on file"
-              description="Create your clinical profile here in the Trust Center."
+              description="Create your clinical profile here in the Profile."
               action={<Button onClick={() => setEditSection("demographics")}>Create Profile</Button>}
             />
           )}

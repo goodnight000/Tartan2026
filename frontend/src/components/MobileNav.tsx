@@ -23,8 +23,8 @@ export function MobileNav() {
           className="shell-nav nav-open"
           aria-label="Mobile navigation"
         >
-          <Link href="/app" onClick={() => setOpen(false)}>Command Center</Link>
-          <Link href="/profile" onClick={() => setOpen(false)}>Trust Center</Link>
+          <Link href="/app" onClick={() => setOpen(false)}>Dashboard</Link>
+          <Link href="/profile" onClick={() => setOpen(false)}>Profile</Link>
         </nav>
       )}
     </>

@@ -719,7 +719,7 @@ export default function OnboardingPage() {
         if (profile.onboarding?.completed) {
           push({
             title: "Intake already completed",
-            description: "Update details in the Trust Center.",
+            description: "Update details in the Profile.",
             variant: "info",
           });
           router.replace("/profile");
@@ -934,7 +934,7 @@ export default function OnboardingPage() {
       } catch (error) {
         push({
           title: "Local save complete",
-          description: "Cloud backup failed. You can retry from the Trust Center.",
+          description: "Cloud backup failed. You can retry from the Profile.",
           variant: "warning",
         });
       }

@@ -53,8 +53,8 @@ export default function RootLayout({
                 </Link>
                 <MobileNav />
                 <nav className="shell-nav" aria-label="Primary">
-                  <Link href="/app">Command Center</Link>
-                  <Link href="/profile">Trust Center</Link>
+                  <Link href="/app">Dashboard</Link>
+                  <Link href="/profile">Profile</Link>
                 </nav>
                 <div className="flex items-center gap-3">
                   <TrustBadge />

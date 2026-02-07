@@ -274,7 +274,7 @@ export default function AppPage() {
       {/* Header with greeting and triage */}
       <Card className="reveal space-y-4 p-7">
         <PageHeader
-          eyebrow="Command Center"
+          eyebrow="Dashboard"
           title={greetingText}
           subtitle={topPriority}
         />
