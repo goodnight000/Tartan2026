@@ -1566,7 +1566,6 @@ export default function OnboardingPage() {
 
               {step.id === "review_confirm" && (
                 <div className="space-y-5">
-                  <p className="text-sm text-[color:var(--cp-muted)]">Here is what I understand so far. Please fix anything inaccurate.</p>
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-[color:var(--cp-line)] bg-white/70 p-4">
                       <div className="flex items-center justify-between">
