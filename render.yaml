@@ -2,10 +2,9 @@ services:
   - type: web
     name: carepilot-backend
     env: docker
-    rootDir: .
+    dockerContext: .
     dockerfilePath: backend/Dockerfile
     autoDeploy: true
-    plan: starter
     healthCheckPath: /docs
     envVars:
       - key: ALLOW_ANON
@@ -14,10 +13,9 @@ services:
   - type: web
     name: carepilot-carebase
     env: docker
-    rootDir: .
+    dockerContext: .
     dockerfilePath: carebase_server/Dockerfile
     autoDeploy: true
-    plan: starter
     envVars:
       - key: PORT
         value: "3100"
@@ -25,10 +23,9 @@ services:
   - type: web
     name: carepilot-frontend
     env: docker
-    rootDir: .
+    dockerContext: .
     dockerfilePath: frontend/Dockerfile
     autoDeploy: true
-    plan: starter
     envVars:
       - key: BACKEND_URL
         value: "https://carepilot-backend.onrender.com"
