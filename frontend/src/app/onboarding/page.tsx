@@ -136,6 +136,19 @@ const DEFAULT_REMINDERS = {
   },
 };
 
+const DEFAULT_PROFILE_MODE = {
+  managing_for: "self" as const,
+};
+
+const DEFAULT_PREFERENCES = {
+  radius_miles: 5 as 5,
+  preferred_pharmacy: "",
+  preferred_days: [] as string[],
+  appointment_windows: [] as string[],
+  provider_gender_preference: undefined as "female" | "male" | "no_preference" | undefined,
+  care_priority: "no_preference" as const,
+};
+
 const defaultValues: FormValues = {
   consent: {
     health_data_use: false,
@@ -260,6 +273,22 @@ const APPOINTMENT_WINDOWS = [
   "17:00-20:00",
 ] as const;
 
+const CARE_PRIORITY_OPTIONS = [
+  { value: "closest_location", label: "Closest location" },
+  { value: "weekend_availability", label: "Weekend availability" },
+  { value: "specific_provider_gender", label: "Specific provider gender" },
+  { value: "no_preference", label: "No preference" },
+] as const;
+
+const FAMILY_HISTORY_KEYS = [
+  "heart_disease",
+  "stroke",
+  "diabetes",
+  "cancer",
+  "hypertension",
+  "none_or_unsure",
+] as const;
+
 const SELECT_CLASS =
   "w-full rounded-2xl border border-[color:var(--cp-line)] bg-white/85 px-4 py-2.5 text-sm text-[color:var(--cp-text)] focus:outline-none focus:ring-2 focus:ring-[color:var(--cp-primary)]/45 focus:border-[color:var(--cp-primary)]";
 
@@ -273,17 +302,22 @@ function normalizeText(value?: string | null): string | undefined {
   return trimmed.length ? trimmed : undefined;
 }
 
-function stripUndefined<T>(value: T): T | undefined {
-  if (value === undefined) return undefined;
+function normalizeRadius(value?: number | null): 3 | 5 | 10 | undefined {
+  if (value === 3 || value === 5 || value === 10) return value;
+  return undefined;
+}
+
+function stripUndefined<T>(value: T): T {
+  if (value === undefined) return value as T;
   if (typeof value === "string") {
     const trimmed = value.trim();
-    return trimmed.length ? (trimmed as T) : undefined;
+    return (trimmed.length ? trimmed : undefined) as T;
   }
   if (Array.isArray(value)) {
     const next = value
       .map((item) => stripUndefined(item))
       .filter((item) => item !== undefined) as T;
-    return next;
+    return next as T;
   }
   if (value && typeof value === "object") {
     const result: Record<string, unknown> = {};
@@ -324,7 +358,15 @@ function buildPayload(
   existing: MedicalProfile | null,
   stepId: StepId,
   complete: boolean
-) {
+): Omit<MedicalProfile, "user_id" | "updated_at"> {
+  const writeAll = complete || stepId === "review_confirm";
+  const writeConsent = writeAll || stepId === "consent_transparency";
+  const writeProfileMode = writeAll || stepId === "profile_mode";
+  const writeBaseline = writeAll || stepId === "health_baseline";
+  const writeMeds = writeAll || stepId === "medications_allergies";
+  const writeLogistics = writeAll || stepId === "care_logistics";
+  const writeReminders = writeAll || stepId === "reminders_controls";
+
   const cleanedConditions = values.conditions
     .map((condition) => ({
       name: normalizeText(condition.name) ?? "",
@@ -369,52 +411,91 @@ function buildPayload(
     }))
     .filter((allergy) => allergy.allergen.length > 0);
 
-  const finalConditions =
-    cleanedConditions.length > 0 ? cleanedConditions : existing?.conditions ?? [];
-  const finalProcedures =
-    cleanedProcedures.length > 0 ? cleanedProcedures : existing?.procedures ?? [];
-  const finalMeds = cleanedMeds.length > 0 ? cleanedMeds : existing?.meds ?? [];
-  const finalAllergies =
-    cleanedAllergies.length > 0 ? cleanedAllergies : existing?.allergies ?? [];
+  const finalConditions = writeBaseline ? cleanedConditions : existing?.conditions ?? [];
+  const finalProcedures = writeBaseline ? cleanedProcedures : existing?.procedures ?? [];
+  const finalMeds = writeMeds ? cleanedMeds : existing?.meds ?? [];
+  const finalAllergies = writeMeds ? cleanedAllergies : existing?.allergies ?? [];
 
-  const healthDataUse = values.consent.health_data_use ?? false;
-  const acceptedAt =
-    healthDataUse && !existing?.consent?.accepted_at
+  const healthDataUse = writeConsent
+    ? values.consent.health_data_use ?? false
+    : existing?.consent?.health_data_use ?? false;
+  const acceptedAt = writeConsent
+    ? healthDataUse && !existing?.consent?.accepted_at
       ? nowIso()
-      : existing?.consent?.accepted_at;
+      : existing?.consent?.accepted_at
+    : existing?.consent?.accepted_at;
 
-  const profileMode = values.profile_mode.managing_for
-    ? {
-        managing_for: values.profile_mode.managing_for,
-        dependent_label:
-          values.profile_mode.managing_for === "someone_else"
-            ? normalizeText(values.profile_mode.dependent_label)
-            : undefined,
-        relationship:
-          values.profile_mode.managing_for === "someone_else"
-            ? values.profile_mode.relationship
-            : undefined,
-      }
-    : existing?.profile_mode ?? {
-        managing_for: "self" as const,
-      };
+  const profileMode: MedicalProfile["profile_mode"] =
+    (writeProfileMode && values.profile_mode.managing_for
+      ? {
+          managing_for: values.profile_mode.managing_for,
+          dependent_label:
+            values.profile_mode.managing_for === "someone_else"
+              ? normalizeText(values.profile_mode.dependent_label)
+              : undefined,
+          relationship:
+            values.profile_mode.managing_for === "someone_else"
+              ? values.profile_mode.relationship
+              : undefined,
+        }
+      : undefined) ??
+    existing?.profile_mode ??
+    DEFAULT_PROFILE_MODE;
 
-  const preferences = {
+  const preferences: MedicalProfile["preferences"] = {
     radius_miles:
-      (values.preferences.radius_miles as 3 | 5 | 10 | undefined) ??
-      existing?.preferences?.radius_miles,
-    preferred_pharmacy:
-      normalizeText(values.preferences.preferred_pharmacy) ?? existing?.preferences?.preferred_pharmacy,
-    preferred_days: values.preferences.preferred_days.length
+      normalizeRadius(writeLogistics ? values.preferences.radius_miles : undefined) ??
+      normalizeRadius(existing?.preferences?.radius_miles) ??
+      DEFAULT_PREFERENCES.radius_miles,
+    preferred_pharmacy: writeLogistics
+      ? normalizeText(values.preferences.preferred_pharmacy)
+      : existing?.preferences?.preferred_pharmacy ?? DEFAULT_PREFERENCES.preferred_pharmacy,
+    preferred_days: writeLogistics
       ? values.preferences.preferred_days
-      : existing?.preferences?.preferred_days ?? [],
-    appointment_windows: values.preferences.appointment_windows.length
+      : existing?.preferences?.preferred_days ?? DEFAULT_PREFERENCES.preferred_days,
+    appointment_windows: writeLogistics
       ? values.preferences.appointment_windows
-      : existing?.preferences?.appointment_windows ?? [],
-    provider_gender_preference:
-      values.preferences.provider_gender_preference ?? existing?.preferences?.provider_gender_preference,
+      : existing?.preferences?.appointment_windows ?? DEFAULT_PREFERENCES.appointment_windows,
+    provider_gender_preference: writeLogistics
+      ? values.preferences.provider_gender_preference
+      : existing?.preferences?.provider_gender_preference ?? DEFAULT_PREFERENCES.provider_gender_preference,
     care_priority:
-      values.preferences.care_priority ?? existing?.preferences?.care_priority,
+      (writeLogistics ? values.preferences.care_priority : undefined) ??
+      existing?.preferences?.care_priority ??
+      DEFAULT_PREFERENCES.care_priority,
+  };
+
+  const reminders: MedicalProfile["reminders"] = {
+    med_runout:
+      (writeReminders ? values.reminders.med_runout : undefined) ??
+      existing?.reminders?.med_runout ??
+      DEFAULT_REMINDERS.med_runout,
+    checkup_due:
+      (writeReminders ? values.reminders.checkup_due : undefined) ??
+      existing?.reminders?.checkup_due ??
+      DEFAULT_REMINDERS.checkup_due,
+    followup_nudges:
+      (writeReminders ? values.reminders.followup_nudges : undefined) ??
+      existing?.reminders?.followup_nudges ??
+      DEFAULT_REMINDERS.followup_nudges,
+    reminder_mode:
+      (writeReminders ? values.reminders.reminder_mode : undefined) ??
+      existing?.reminders?.reminder_mode ??
+      DEFAULT_REMINDERS.reminder_mode,
+    proactive_state:
+      (writeReminders ? values.reminders.proactive_state : undefined) ??
+      existing?.reminders?.proactive_state ??
+      DEFAULT_REMINDERS.proactive_state,
+    quiet_hours: {
+      start:
+        (writeReminders ? values.reminders.quiet_hours.start : undefined) ??
+        existing?.reminders?.quiet_hours?.start ??
+        DEFAULT_REMINDERS.quiet_hours.start,
+      end:
+        (writeReminders ? values.reminders.quiet_hours.end : undefined) ??
+        existing?.reminders?.quiet_hours?.end ??
+        DEFAULT_REMINDERS.quiet_hours.end,
+    },
   };
 
   const onboardingCompleted = complete || existing?.onboarding?.completed || false;
@@ -427,41 +508,45 @@ function buildPayload(
     },
     profile_mode: profileMode,
     demographics: {
-      year_of_birth: values.demographics.year_of_birth ?? existing?.demographics?.year_of_birth,
+      year_of_birth: writeBaseline
+        ? values.demographics.year_of_birth
+        : existing?.demographics?.year_of_birth,
       sex_assigned_at_birth:
-        values.demographics.sex_assigned_at_birth ?? existing?.demographics?.sex_assigned_at_birth,
-      height_cm: values.demographics.height_cm ?? existing?.demographics?.height_cm,
-      weight_kg: values.demographics.weight_kg ?? existing?.demographics?.weight_kg,
+        writeBaseline
+          ? values.demographics.sex_assigned_at_birth
+          : existing?.demographics?.sex_assigned_at_birth,
+      height_cm: writeBaseline ? values.demographics.height_cm : existing?.demographics?.height_cm,
+      weight_kg: writeBaseline ? values.demographics.weight_kg : existing?.demographics?.weight_kg,
     },
     lifestyle: {
-      smoking_status: values.lifestyle.smoking_status ?? existing?.lifestyle?.smoking_status,
-      alcohol_use: values.lifestyle.alcohol_use ?? existing?.lifestyle?.alcohol_use,
-      activity_level: values.lifestyle.activity_level ?? existing?.lifestyle?.activity_level,
+      smoking_status: writeBaseline
+        ? values.lifestyle.smoking_status
+        : existing?.lifestyle?.smoking_status,
+      alcohol_use: writeBaseline ? values.lifestyle.alcohol_use : existing?.lifestyle?.alcohol_use,
+      activity_level: writeBaseline
+        ? values.lifestyle.activity_level
+        : existing?.lifestyle?.activity_level,
     },
     conditions: finalConditions,
     procedures: finalProcedures,
     meds: finalMeds,
     allergies: finalAllergies,
     family_history: {
-      heart_disease: values.family_history.heart_disease,
-      stroke: values.family_history.stroke,
-      diabetes: values.family_history.diabetes,
-      cancer: values.family_history.cancer,
-      hypertension: values.family_history.hypertension,
-      none_or_unsure: values.family_history.none_or_unsure,
+      heart_disease: writeBaseline
+        ? values.family_history.heart_disease
+        : existing?.family_history?.heart_disease,
+      stroke: writeBaseline ? values.family_history.stroke : existing?.family_history?.stroke,
+      diabetes: writeBaseline ? values.family_history.diabetes : existing?.family_history?.diabetes,
+      cancer: writeBaseline ? values.family_history.cancer : existing?.family_history?.cancer,
+      hypertension: writeBaseline
+        ? values.family_history.hypertension
+        : existing?.family_history?.hypertension,
+      none_or_unsure: writeBaseline
+        ? values.family_history.none_or_unsure
+        : existing?.family_history?.none_or_unsure,
     },
     preferences,
-    reminders: {
-      med_runout: values.reminders.med_runout,
-      checkup_due: values.reminders.checkup_due,
-      followup_nudges: values.reminders.followup_nudges,
-      reminder_mode: values.reminders.reminder_mode,
-      proactive_state: values.reminders.proactive_state,
-      quiet_hours: {
-        start: values.reminders.quiet_hours.start,
-        end: values.reminders.quiet_hours.end,
-      },
-    },
+    reminders,
     onboarding: {
       completed: onboardingCompleted,
       completed_at: complete ? nowIso() : existing?.onboarding?.completed_at,
@@ -734,7 +819,7 @@ export default function OnboardingPage() {
       if (!user) return;
       setSaveStatus("saving");
       const payload = buildPayload(values, existingProfile, step.id, Boolean(options.complete));
-      const sanitized = stripUndefined(payload) as typeof payload;
+      const sanitized = stripUndefined(payload);
       try {
         await upsertProfile(user.uid, sanitized);
         setSaveStatus("saved");
@@ -767,8 +852,9 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     const subscription = form.watch((values, meta) => {
+      const currentValues = values as FormValues;
       if (skipAutosaveRef.current) {
-        prevValuesRef.current = values;
+        prevValuesRef.current = currentValues;
         return;
       }
       if (!ready || !user) return;
@@ -790,10 +876,10 @@ export default function OnboardingPage() {
 
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
       autosaveTimer.current = setTimeout(() => {
-        void performSave(values, { retry: true });
+        void performSave(currentValues, { retry: true });
       }, 500);
 
-      prevValuesRef.current = values;
+      prevValuesRef.current = currentValues;
     });
 
     return () => subscription.unsubscribe();
@@ -1180,7 +1266,10 @@ export default function OnboardingPage() {
                     <div className="max-w-md">
                       <TagInput
                         label="Add another condition"
-                        value={form.watch("conditions").map((c) => c.name).filter(Boolean)}
+                        value={form
+                          .watch("conditions")
+                          .map((c) => c.name)
+                          .filter((name): name is string => Boolean(name))}
                         onChange={(next) => {
                           const unique = Array.from(new Set(next));
                           const existing = form.getValues("conditions");
@@ -1271,9 +1360,9 @@ export default function OnboardingPage() {
                   <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-[color:var(--cp-text)]">Family history</h3>
                     <div className="grid gap-2 md:grid-cols-2">
-                      {["heart_disease", "stroke", "diabetes", "cancer", "hypertension", "none_or_unsure"].map((item) => (
+                      {FAMILY_HISTORY_KEYS.map((item) => (
                         <label key={item} className="flex items-center gap-2 text-sm">
-                          <input type="checkbox" {...form.register(`family_history.${item}` as const)} />
+                          <input type="checkbox" {...form.register(`family_history.${item}`)} />
                           {item.replace(/_/g, " ")}
                         </label>
                       ))}
@@ -1396,12 +1485,7 @@ export default function OnboardingPage() {
                   <div className="space-y-2">
                     <Label>Care priority</Label>
                     <div className="grid gap-2 md:grid-cols-2">
-                      {[
-                        { value: "closest_location", label: "Closest location" },
-                        { value: "weekend_availability", label: "Weekend availability" },
-                        { value: "specific_provider_gender", label: "Specific provider gender" },
-                        { value: "no_preference", label: "No preference" },
-                      ].map((option) => (
+                      {CARE_PRIORITY_OPTIONS.map((option) => (
                         <Button
                           key={option.value}
                           type="button"

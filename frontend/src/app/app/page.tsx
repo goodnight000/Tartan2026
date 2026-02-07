@@ -40,6 +40,13 @@ function getGreeting(): { text: string; icon: typeof Sun } {
   return { text: "Good evening", icon: Moon };
 }
 
+function parseHour(value?: string | null): number | null {
+  if (!value) return null;
+  const [hourString] = value.split(":");
+  const hour = Number(hourString);
+  return Number.isFinite(hour) ? hour : null;
+}
+
 const signalSeed: HealthSignal[] = [
   {
     id: "cycle",
@@ -159,6 +166,12 @@ export default function AppPage() {
     },
   });
 
+  useEffect(() => {
+    if (!profileQuery.data?.reminders) return;
+    setPaused(profileQuery.data.reminders.proactive_state === "paused");
+    setMedOnly(profileQuery.data.reminders.reminder_mode === "medications_only");
+  }, [profileQuery.data?.reminders]);
+
   const medCards: MedicationCardData[] = useMemo(() => {
     if (!profileQuery.data?.meds) return [];
     return profileQuery.data.meds
@@ -213,7 +226,12 @@ export default function AppPage() {
   };
 
   const greeting = getGreeting();
-  const quietHoursWindow = { startHour: 22, endHour: 8 };
+  const reminderSettings = profileQuery.data?.reminders;
+  const quietStart = reminderSettings?.quiet_hours?.start ?? "22:00";
+  const quietEnd = reminderSettings?.quiet_hours?.end ?? "08:00";
+  const quietStartHour = parseHour(quietStart) ?? 22;
+  const quietEndHour = parseHour(quietEnd) ?? 8;
+  const quietHoursWindow = { startHour: quietStartHour, endHour: quietEndHour };
   const isQuietHours =
     now.getHours() >= quietHoursWindow.startHour || now.getHours() < quietHoursWindow.endHour;
   const snoozeActive = snoozedUntil ? snoozedUntil.getTime() > now.getTime() : false;
@@ -352,7 +370,7 @@ export default function AppPage() {
               <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
                 <span>Quiet hours</span>
                 <span className="font-mono text-xs">
-                  10:00 PM - 8:00 AM {isQuietHours ? "(Active)" : "(Inactive)"}
+                  {quietStart} - {quietEnd} {isQuietHours ? "(Active)" : "(Inactive)"}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
