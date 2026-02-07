@@ -1,0 +1,150 @@
+{
+  "id": "carepilot",
+  "kind": "extension",
+  "name": "CarePilot",
+  "description": "CarePilot plugin skeleton and config contract.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "dbPath": {
+        "type": "string",
+        "default": "~/.openclaw/carepilot/carepilot.sqlite"
+      },
+      "retentionPolicies": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lab_report_days": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 730
+          },
+          "imaging_report_days": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 730
+          },
+          "clinical_note_days": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 365
+          },
+          "voice_attachment_days": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 30
+          },
+          "other_days": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 90
+          }
+        }
+      },
+      "triageMode": {
+        "type": "string",
+        "enum": ["conservative", "balanced", "aggressive"],
+        "default": "conservative"
+      },
+      "actionMode": {
+        "type": "string",
+        "enum": ["simulated", "live"],
+        "default": "simulated"
+      },
+      "proactiveMaxPerDay": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10,
+        "default": 1
+      },
+      "voice": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": ["openai", "gcp", "local", "mock"],
+            "default": "openai"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "docs": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "imagingAssist": {
+            "type": "boolean",
+            "default": true
+          },
+          "directImagingInterpretation": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "healthkit": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["simulated", "live"],
+            "default": "simulated"
+          },
+          "enabledMetrics": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "cycle",
+                "medication_tracking",
+                "workouts",
+                "sleep",
+                "resting_hr",
+                "step_count"
+              ]
+            },
+            "minItems": 1
+          }
+        }
+      }
+    }
+  },
+  "uiHints": {
+    "dbPath": {
+      "label": "CarePilot DB Path",
+      "placeholder": "~/.openclaw/carepilot/carepilot.sqlite",
+      "advanced": true
+    },
+    "triageMode": {
+      "label": "Triage Mode"
+    },
+    "actionMode": {
+      "label": "Action Mode"
+    },
+    "proactiveMaxPerDay": {
+      "label": "Proactive Max Per Day"
+    },
+    "voice.provider": {
+      "label": "Voice Provider"
+    },
+    "voice.enabled": {
+      "label": "Voice Enabled"
+    },
+    "docs.imagingAssist": {
+      "label": "Imaging Assist"
+    },
+    "docs.directImagingInterpretation": {
+      "label": "Direct Imaging Interpretation"
+    },
+    "healthkit.mode": {
+      "label": "HealthKit Mode"
+    }
+  }
+}
+

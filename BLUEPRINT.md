@@ -1,11 +1,11 @@
-# MedClaw - Personal AI Family Doctor
+# CarePilot - Personal AI Family Doctor
 ## Hackathon Product Blueprint
 
 ---
 
 ## Executive Summary
 
-**MedClaw** is a personal AI family doctor that goes beyond Q&A -- it remembers your complete medical history, proactively watches out for your health, and takes real-world actions on your behalf. Built on top of OpenClaw's proven agent orchestration framework, MedClaw specializes the agentic infrastructure for healthcare: persistent clinical memory, proactive care nudges, and real-world action execution (booking appointments, finding pharmacies, managing medication refills).
+**CarePilot** is a personal AI family doctor that goes beyond Q&A -- it remembers your complete medical history, proactively watches out for your health, and takes real-world actions on your behalf. Built on top of OpenClaw's proven agent orchestration framework, CarePilot specializes the agentic infrastructure for healthcare: persistent clinical memory, proactive care nudges, and real-world action execution (booking appointments, finding pharmacies, managing medication refills).
 
 This document is the complete ideation blueprint for the hackathon build. It covers naming, features, architecture, user flows, safety considerations, and demo strategy.
 
@@ -31,15 +31,15 @@ This document is the complete ideation blueprint for the hackathon build. It cov
 
 ## 1. Naming
 
-### Primary Recommendation: **MedClaw**
+### Primary Recommendation: **CarePilot**
 
-Short, memorable, and directly connects the health domain ("Med") with the underlying platform ("Claw" from OpenClaw). Easy to say, easy to type, easy to brand.
+Short, memorable, and clearly communicates "care guidance + action." The "Pilot" framing matches the product behavior: continuously monitoring, recommending, and helping users navigate healthcare decisions.
 
 ### Alternative Names (Ranked)
 
 | Name | Rationale | Vibe |
 |------|-----------|------|
-| **MedClaw** | Clear domain + platform connection. Sounds like a tool that grabs hold of your health. | Technical, capable |
+| **CarePilot** | Emphasizes guided navigation through healthcare tasks and routines with proactive assistance. | Trusted, capable |
 | **Cura** | Latin for "care" or "cure." Short, elegant, global feel. | Warm, clinical |
 | **Vigil** | Implies watchfulness -- the AI that keeps watch over your health 24/7. Ties to the proactive monitoring angle. | Protective, always-on |
 | **Healthpaw** | Playful riff on the claw/paw theme. Approachable for consumer audiences. | Friendly, approachable |
@@ -48,7 +48,7 @@ Short, memorable, and directly connects the health domain ("Med") with the under
 | **Praxis** | Greek for "practice" (as in medical practice). Implies action-taking. | Sophisticated |
 | **ClawRx** | Claw + Rx (prescription symbol). Punchy, pharma-flavored. | Bold, medical |
 
-**Recommendation for hackathon:** Use **MedClaw** for clarity during judging. Judges need to instantly understand what your project does, and the name should help, not confuse. "MedClaw" does that work in two syllables.
+**Recommendation for hackathon:** Use **CarePilot** for clarity during judging. Judges should immediately infer that the product helps users navigate care, not just chat. The name signals practical, ongoing guidance.
 
 ---
 
@@ -68,7 +68,7 @@ Healthcare today suffers from several failures that technology has not yet solve
 
 ### The Solution
 
-MedClaw is a personal AI family doctor that:
+CarePilot is a personal AI family doctor that:
 
 - **Knows you.** It maintains a persistent, structured memory of your medical history -- medications, conditions, allergies, past procedures, family history, lab results, and preferences. Every conversation builds on the last.
 
@@ -161,7 +161,7 @@ These are the features to build and demo. Scoped for 24-48 hours of development 
 
 ## 4. Agentic Health Actions
 
-This is MedClaw's most novel and demo-worthy capability. The AI does not just talk -- it acts.
+This is CarePilot's most novel and demo-worthy capability. The AI does not just talk -- it acts.
 
 ### 4.1 Action Categories
 
@@ -232,15 +232,15 @@ For the hackathon demo, focus on making ONE action flow work end-to-end and feel
 **Recommended flagship action: "Find and book a blood test"**
 
 Demo script:
-1. User tells MedClaw they have been feeling tired lately
-2. MedClaw recalls from memory that the user has a history of low iron and has not had bloodwork in 8 months
-3. MedClaw suggests a CBC and iron panel blood test
+1. User tells CarePilot they have been feeling tired lately
+2. CarePilot recalls from memory that the user has a history of low iron and has not had bloodwork in 8 months
+3. CarePilot suggests a CBC and iron panel blood test
 4. User agrees
-5. MedClaw searches for nearby Quest Diagnostics / Labcorp locations
-6. MedClaw presents top 3 options with address, hours, estimated wait, and cost
+5. CarePilot searches for nearby Quest Diagnostics / Labcorp locations
+6. CarePilot presents top 3 options with address, hours, estimated wait, and cost
 7. User picks one
-8. MedClaw confirms the booking details and books it (or simulates booking)
-9. MedClaw adds the appointment to its memory and sets a reminder for the day before
+8. CarePilot confirms the booking details and books it (or simulates booking)
+9. CarePilot adds the appointment to its memory and sets a reminder for the day before
 
 This single flow demonstrates ALL three differentiators: memory, proactivity, and agentic action.
 
@@ -250,7 +250,7 @@ This single flow demonstrates ALL three differentiators: memory, proactivity, an
 
 ### 5.1 Architecture: Two-Layer Memory
 
-MedClaw uses a two-layer memory system, leveraging OpenClaw's built-in memory infrastructure for the conversational layer and adding a structured clinical data layer on top.
+CarePilot uses a two-layer memory system, leveraging OpenClaw's built-in memory infrastructure for the conversational layer and adding a structured clinical data layer on top.
 
 ```
 +--------------------------------------------------+
@@ -308,28 +308,28 @@ How does the profile get populated?
 **Option A: Guided Onboarding (Recommended for hackathon)**
 First conversation is a structured intake:
 ```
-MedClaw: "Welcome! I'm MedClaw, your personal AI family doctor. To give you
+CarePilot: "Welcome! I'm CarePilot, your personal AI family doctor. To give you
 the best care, I'd like to learn about your health. This will take about
 5 minutes. Ready to get started?"
 
-MedClaw: "Let's start with the basics. Do you have any ongoing health
+CarePilot: "Let's start with the basics. Do you have any ongoing health
 conditions? Things like diabetes, high blood pressure, asthma, or anything
 else you manage regularly?"
 
 User: "I have type 2 diabetes and high blood pressure"
 
-MedClaw: "Got it. I've noted Type 2 Diabetes and Hypertension. When were
+CarePilot: "Got it. I've noted Type 2 Diabetes and Hypertension. When were
 these diagnosed, roughly?"
 
 [...continues through medications, allergies, family history...]
 ```
 
 **Option B: Organic Extraction**
-As the user chats naturally, MedClaw extracts and stores health data:
+As the user chats naturally, CarePilot extracts and stores health data:
 ```
 User: "I've been having headaches and my Lisinopril isn't helping my BP"
 
-MedClaw internally: [Extract: medication=Lisinopril, condition=hypertension,
+CarePilot internally: [Extract: medication=Lisinopril, condition=hypertension,
 symptom=headaches. Update clinical profile.]
 ```
 
@@ -337,7 +337,7 @@ symptom=headaches. Update clinical profile.]
 
 ### 5.5 Memory Retrieval Strategy
 
-When the user sends a message, MedClaw:
+When the user sends a message, CarePilot:
 
 1. Always loads the full clinical profile (it is structured and small)
 2. Runs a hybrid search against conversational memory for relevant context
@@ -347,7 +347,7 @@ This ensures every response is personalized without requiring the user to repeat
 
 ### 5.6 Implementation with OpenClaw
 
-OpenClaw's memory system uses markdown files indexed into SQLite with hybrid FTS + vector search. For MedClaw:
+OpenClaw's memory system uses markdown files indexed into SQLite with hybrid FTS + vector search. For CarePilot:
 
 - **Clinical profile:** Stored in a structured markdown file (e.g., `memory/clinical-profile.md`) with clear sections for each category. The `clinical_profile_get` tool reads this file directly.
 - **Conversational memory:** Uses the standard `MEMORY.md` and `memory/**/*.md` paths. OpenClaw's memory indexing pipeline (chunk, embed, store) handles this automatically.
@@ -370,7 +370,7 @@ Ranked by impact and feasibility for a hackathon:
 - Why it demos well: It shows the AI thinking ahead without being asked. This is the single most impressive proactive feature to show judges.
 
 **Post-Conversation Follow-Up**
-- How: When MedClaw recommends an action (see a doctor, get a test, start a new exercise), set a follow-up reminder.
+- How: When CarePilot recommends an action (see a doctor, get a test, start a new exercise), set a follow-up reminder.
 - Trigger: Configurable delay (default: 3 days).
 - Message: "A few days ago we talked about getting your cholesterol checked. Have you had a chance to schedule that? I can help find a lab near you."
 - Why it demos well: Shows persistent care beyond a single conversation.
@@ -384,7 +384,7 @@ Ranked by impact and feasibility for a hackathon:
 - Why: Shows the AI is aware of the calendar and the user's risk factors simultaneously.
 
 **Appointment Reminder**
-- How: When MedClaw books or logs an appointment, set a reminder.
+- How: When CarePilot books or logs an appointment, set a reminder.
 - Trigger: 24 hours before appointment.
 - Message: "Reminder: you have a blood test at Quest Diagnostics on 5th Ave tomorrow at 9:30 AM. Remember to fast for 12 hours before the test."
 - Why: Practical utility that everyone understands.
@@ -427,10 +427,10 @@ OpenClaw provides two primitives for proactive behavior:
 ### 7.1 First-Time User Flow
 
 ```
-[User opens MedClaw for the first time]
+[User opens CarePilot for the first time]
     |
     v
-Welcome + brief explanation of what MedClaw does
+Welcome + brief explanation of what CarePilot does
     |
     v
 Privacy notice and consent
@@ -478,7 +478,7 @@ User: "I've been having really bad headaches for the past 3 days"
 -- Recent context: BP was 142/90 at last check (2 weeks ago)
     |
     v
-MedClaw: "I'm sorry you've been dealing with headaches. Given your
+CarePilot: "I'm sorry you've been dealing with headaches. Given your
 hypertension history and that your last blood pressure reading was a
 bit elevated at 142/90, these headaches could be related to your blood
 pressure. A few questions:
@@ -491,7 +491,7 @@ pressure. A few questions:
 [Conversation continues with contextual follow-up]
     |
     v
-MedClaw recommendation:
+CarePilot recommendation:
 "Based on what you've described, I'd recommend:
 1. Check your blood pressure today if you can
 2. Make sure you're taking Lisinopril consistently
@@ -511,14 +511,14 @@ User: "Yes, find me an appointment with Dr. Smith"
     |
     v
 [AI plans the search]
-MedClaw: "Let me search for availability with Dr. Smith. I know you
+CarePilot: "Let me search for availability with Dr. Smith. I know you
 prefer morning appointments. Searching..."
     |
     v
 [Execute search tool -- Google Places / simulated provider API]
     |
     v
-MedClaw: "I found 3 options with Dr. Smith's office at 123 Medical Dr:
+CarePilot: "I found 3 options with Dr. Smith's office at 123 Medical Dr:
 
   1. Tuesday, Feb 11 at 9:00 AM
   2. Wednesday, Feb 12 at 10:30 AM
@@ -531,7 +531,7 @@ User: "Tuesday morning"
     |
     v
 [Explicit confirmation step]
-MedClaw: "I'll book:
+CarePilot: "I'll book:
   Dr. Smith - General Checkup
   Tuesday, Feb 11 at 9:00 AM
   123 Medical Drive, Suite 200
@@ -545,7 +545,7 @@ User: "Yes"
 [Execute booking action]
     |
     v
-MedClaw: "Done! Your appointment with Dr. Smith is confirmed for
+CarePilot: "Done! Your appointment with Dr. Smith is confirmed for
 Tuesday, Feb 11 at 9:00 AM. I'll remind you the day before.
 
 Anything else I can help with?"
@@ -566,7 +566,7 @@ Anything else I can help with?"
 Is the main lane idle?]
     |
     v
-MedClaw (proactive message):
+CarePilot (proactive message):
 "Good morning! Based on when you last filled your Metformin prescription
 (January 8), I estimate you might run out in about 5 days.
 
@@ -579,7 +579,7 @@ User: "Yes please"
 [Execute refill request action with confirmation]
     |
     v
-MedClaw: "Refill request submitted to CVS on Main St for Metformin 500mg.
+CarePilot: "Refill request submitted to CVS on Main St for Metformin 500mg.
 They typically process refills within 24 hours. I'll check back tomorrow
 to confirm it's ready."
     |
@@ -593,15 +593,15 @@ to confirm it's ready."
 
 This section is critical. A health AI carries real risks, and judges will respect a team that has thought about them seriously.
 
-### 8.1 What MedClaw Is NOT
+### 8.1 What CarePilot Is NOT
 
 Be explicit in the product and the demo:
 
-- **MedClaw is NOT a licensed medical professional.** It does not diagnose diseases, prescribe medications, or replace a doctor.
-- **MedClaw is NOT an emergency service.** It cannot call 911, dispatch an ambulance, or provide emergency medical care.
-- **MedClaw is NOT a medical device.** It is not FDA-regulated and does not claim clinical accuracy.
+- **CarePilot is NOT a licensed medical professional.** It does not diagnose diseases, prescribe medications, or replace a doctor.
+- **CarePilot is NOT an emergency service.** It cannot call 911, dispatch an ambulance, or provide emergency medical care.
+- **CarePilot is NOT a medical device.** It is not FDA-regulated and does not claim clinical accuracy.
 
-### 8.2 What MedClaw IS
+### 8.2 What CarePilot IS
 
 - A health information companion that helps you organize and remember your medical data
 - A health logistics assistant that helps with scheduling, reminders, and finding providers
@@ -652,11 +652,11 @@ The AI must NOT attempt to diagnose, reassure, or provide treatment advice for p
 Display at first use and make accessible at any time:
 
 ```
-"MedClaw provides general health information and administrative assistance.
+"CarePilot provides general health information and administrative assistance.
 It is not a substitute for professional medical advice, diagnosis, or treatment.
 Always seek the advice of your physician or other qualified health provider with
 any questions regarding a medical condition. Never disregard professional medical
-advice or delay in seeking it because of something MedClaw said."
+advice or delay in seeking it because of something CarePilot said."
 ```
 
 ### 8.4 Data Privacy and Security
@@ -688,7 +688,7 @@ Health AI hallucinations are especially dangerous. Strategies:
 
 In the presentation, acknowledge these considerations proactively. This shows maturity:
 
-- "We designed MedClaw as a health logistics and information companion, not a diagnostic tool"
+- "We designed CarePilot as a health logistics and information companion, not a diagnostic tool"
 - "Emergency detection is the first check on every message -- safety before helpfulness"
 - "Every real-world action requires explicit user consent, and outcomes are verified, not assumed"
 - "All data stays local -- this is a personal assistant, not a cloud service"
@@ -719,7 +719,7 @@ In the presentation, acknowledge these considerations proactively. This shows ma
          |                                          |
          v                                          v
 +---------------------------------------------------------------+
-|                  MedClaw Plugin Layer                          |
+|                  CarePilot Plugin Layer                          |
 |                                                                |
 |  Tools:                                                        |
 |  - triage_assess        - clinical_profile_get                |
@@ -750,7 +750,7 @@ In the presentation, acknowledge these considerations proactively. This shows ma
 
 #### Why Build on OpenClaw?
 
-| OpenClaw Provides | MedClaw Uses It For |
+| OpenClaw Provides | CarePilot Uses It For |
 |-------------------|-------------------|
 | Multi-channel messaging | Reach users on WhatsApp, Telegram, iMessage, etc. -- no custom app needed |
 | Session management | Maintain conversation continuity across interactions |
@@ -760,11 +760,11 @@ In the presentation, acknowledge these considerations proactively. This shows ma
 | Tool policy layering | Restrict which tools are available and enforce safety checks |
 | before_tool_call hooks | Add consent checks, audit logging, emergency detection |
 | Model fallback | Ensure reliability even if one LLM provider has an outage |
-| Plugin architecture | Package all MedClaw functionality as a clean OpenClaw plugin |
+| Plugin architecture | Package all CarePilot functionality as a clean OpenClaw plugin |
 
-#### MedClaw as an OpenClaw Plugin
+#### CarePilot as an OpenClaw Plugin
 
-MedClaw should be implemented as an OpenClaw plugin that:
+CarePilot should be implemented as an OpenClaw plugin that:
 
 1. **Registers custom tools** (triage_assess, clinical_profile_get, appointment_search, etc.)
 2. **Provides a health-specialized system prompt** that instructs the LLM on its role, capabilities, and constraints
@@ -778,11 +778,11 @@ MedClaw should be implemented as an OpenClaw plugin that:
 ```
 1. User sends message via WhatsApp
 2. OpenClaw Gateway receives message, resolves session
-3. MedClaw triage_assess tool runs FIRST (emergency check)
+3. CarePilot triage_assess tool runs FIRST (emergency check)
 4. If safe, clinical_profile_get loads structured health data
 5. OpenClaw memory_search finds relevant conversation history
 6. Combined context + user message sent to LLM
-7. LLM generates response, possibly calling MedClaw tools
+7. LLM generates response, possibly calling CarePilot tools
 8. before_tool_call hook checks consent for any transactional tools
 9. Tool executes (e.g., appointment_search calls Google Places API)
 10. Result returned to LLM, which formats response for user
@@ -814,17 +814,17 @@ The demo should tell a story, not just show features. Here is a recommended 5-mi
 **Act 1: The Problem (30 seconds)**
 "Raise your hand if you've ever had to repeat your entire medical history to a new doctor. Or forgotten when your last flu shot was. Or run out of medication because nobody reminded you. Healthcare is reactive, fragmented, and it puts all the administrative burden on you."
 
-**Act 2: Meet MedClaw (30 seconds)**
-"MedClaw is your personal AI family doctor. It remembers everything about your health. It watches out for you. And it can take action on your behalf."
+**Act 2: Meet CarePilot (30 seconds)**
+"CarePilot is your personal AI family doctor. It remembers everything about your health. It watches out for you. And it can take action on your behalf."
 
 **Act 3: Live Demo -- Memory (90 seconds)**
-Show the onboarding flow. Walk through adding conditions, medications, and allergies. Then start a new conversation and ask a health question -- show that MedClaw remembers everything from the first conversation.
+Show the onboarding flow. Walk through adding conditions, medications, and allergies. Then start a new conversation and ask a health question -- show that CarePilot remembers everything from the first conversation.
 
 **Act 4: Live Demo -- Proactive Care (60 seconds)**
-Show MedClaw proactively reaching out about a medication refill. "Nobody asked it to do this. It calculated when the medication would run out and reached out on its own."
+Show CarePilot proactively reaching out about a medication refill. "Nobody asked it to do this. It calculated when the medication would run out and reached out on its own."
 
 **Act 5: Live Demo -- Agentic Action (90 seconds)**
-This is the showstopper. Show the full flow: user mentions a symptom, MedClaw connects it to their history, suggests a blood test, finds nearby labs, and books an appointment. The audience should see the AI taking real actions with real search results.
+This is the showstopper. Show the full flow: user mentions a symptom, CarePilot connects it to their history, suggests a blood test, finds nearby labs, and books an appointment. The audience should see the AI taking real actions with real search results.
 
 **Act 6: Safety and Vision (30 seconds)**
 "Every action requires explicit consent. Emergencies are detected and redirected immediately. All data stays on your device. This is not a replacement for your doctor -- it is a personal health companion that makes healthcare work better for you."
@@ -836,7 +836,7 @@ This is the showstopper. Show the full flow: user mentions a symptom, MedClaw co
 | Pre-loaded patient profile | Create a realistic test patient with conditions, meds, allergies, and history. Do not use real patient data. |
 | Simulated appointment data | Pre-seed realistic appointment availability so the booking demo does not fail due to API issues |
 | Backup demo recording | Record a perfect run of the demo as a backup in case of live demo failure |
-| Two devices | One for the "user" side (phone showing WhatsApp/Telegram) and one showing the MedClaw backend/logs |
+| Two devices | One for the "user" side (phone showing WhatsApp/Telegram) and one showing the CarePilot backend/logs |
 | Emergency detection test | Prepare to show what happens when someone reports chest pain -- judges love to see safety features |
 | Memorable patient story | Give the test patient a name and a narrative (e.g., "Sarah, 45, manages diabetes and hypertension, busy working mom") |
 
@@ -844,7 +844,7 @@ This is the showstopper. Show the full flow: user mentions a symptom, MedClaw co
 
 Based on typical hackathon judging criteria:
 
-| Criterion | How MedClaw Scores |
+| Criterion | How CarePilot Scores |
 |-----------|-------------------|
 | **Innovation** | Agentic health actions + persistent medical memory is genuinely novel. Most health AI is just a chatbot with no memory and no ability to take action. |
 | **Technical Complexity** | Multi-layer memory system, proactive scheduling, real-world API integration, safety triage pipeline. Built on a sophisticated open-source agent framework. |
@@ -855,10 +855,10 @@ Based on typical hackathon judging criteria:
 ### 10.4 Potential Judge Questions and Answers
 
 **Q: "How is this different from just asking ChatGPT about health?"**
-A: "Three ways. First, ChatGPT forgets you after every conversation. MedClaw remembers your entire medical history. Second, ChatGPT waits for you to ask. MedClaw proactively reaches out when your meds are running low or you're due for a checkup. Third, ChatGPT can only talk. MedClaw can take action -- it can find labs, compare options, and book appointments."
+A: "Three ways. First, ChatGPT forgets you after every conversation. CarePilot remembers your entire medical history. Second, ChatGPT waits for you to ask. CarePilot proactively reaches out when your meds are running low or you're due for a checkup. Third, ChatGPT can only talk. CarePilot can take action -- it can find labs, compare options, and book appointments."
 
 **Q: "Is this safe? What if it gives bad medical advice?"**
-A: "We built safety-first. Every message goes through emergency triage before anything else. MedClaw never claims to diagnose -- it helps you organize your health information and navigate the healthcare system. And every real-world action requires your explicit approval."
+A: "We built safety-first. Every message goes through emergency triage before anything else. CarePilot never claims to diagnose -- it helps you organize your health information and navigate the healthcare system. And every real-world action requires your explicit approval."
 
 **Q: "How do you handle privacy?"**
 A: "Everything runs locally on your device using OpenClaw. Your health data never goes to our servers because we don't have servers. The only external call is to the LLM API for generating responses, which we acknowledge clearly to users."
@@ -872,7 +872,7 @@ A: "The core health companion could be free and open-source, consistent with Ope
 
 ### 11.1 Visual Identity
 
-Since MedClaw uses existing OpenClaw channels (WhatsApp, Telegram, etc.) as its interface, the "design" is primarily about the conversational experience rather than a custom UI. However, for the WebChat interface and presentation materials:
+Since CarePilot uses existing OpenClaw channels (WhatsApp, Telegram, etc.) as its interface, the "design" is primarily about the conversational experience rather than a custom UI. However, for the WebChat interface and presentation materials:
 
 **Overall aesthetic:** Clean, trustworthy, and calming. Healthcare UI should never feel chaotic, flashy, or aggressive.
 
@@ -880,7 +880,7 @@ Since MedClaw uses existing OpenClaw channels (WhatsApp, Telegram, etc.) as its 
 
 | Color Name | Hex Code | Usage |
 |------------|----------|-------|
-| MedClaw Blue | #2B6CB0 | Primary brand color -- trust, professionalism |
+| CarePilot Blue | #2B6CB0 | Primary brand color -- trust, professionalism |
 | Calm Teal | #38A89D | Secondary -- health, wellness, growth |
 | Soft White | #F7FAFC | Backgrounds -- clean, clinical |
 | Warm Gray | #4A5568 | Body text -- readable, not harsh |
@@ -941,14 +941,14 @@ Assuming 24-48 hours of development time with a team of 3-4 people.
 |------|-------|-------------|
 | Set up OpenClaw dev environment | Dev 1 | Clone OpenClaw, install deps, verify gateway runs, connect at least one channel (WebChat or Telegram) |
 | Design clinical profile schema | Dev 2 | Define the structured markdown format for the clinical profile |
-| Write MedClaw system prompt | Dev 3 | Craft the LLM system prompt that defines MedClaw's persona, capabilities, and constraints |
+| Write CarePilot system prompt | Dev 3 | Craft the LLM system prompt that defines CarePilot's persona, capabilities, and constraints |
 | Design the demo patient story | Dev 4 / All | Create "Sarah" -- the test patient persona with a realistic health profile |
 
 #### Hour 4-12: Core Plugin
 
 | Task | Owner | Description |
 |------|-------|-------------|
-| Create MedClaw plugin skeleton | Dev 1 | OpenClaw plugin structure with tool registration |
+| Create CarePilot plugin skeleton | Dev 1 | OpenClaw plugin structure with tool registration |
 | Implement clinical_profile_get/update tools | Dev 2 | Read and write structured health data from markdown |
 | Implement triage_assess tool | Dev 3 | Emergency detection logic that fires on every message |
 | Implement guided onboarding flow | Dev 1 | Structured first-time conversation that populates the clinical profile |
@@ -1023,7 +1023,7 @@ Items that need resolution but can be decided during development:
 
 ### B. Competitive Landscape
 
-| Product | What It Does | How MedClaw Differs |
+| Product | What It Does | How CarePilot Differs |
 |---------|-------------|-------------------|
 | ChatGPT / Claude | General AI chat, can answer health questions | No memory, no proactivity, no actions, no health specialization |
 | Ada Health | Symptom checker with decision tree logic | Rule-based, no persistent memory, no action-taking |
@@ -1031,7 +1031,7 @@ Items that need resolution but can be decided during development:
 | Apple Health | Health data aggregation from devices | Data display only, no AI reasoning, no actions |
 | MyChart (Epic) | Patient portal for specific health systems | Locked to one provider system, no AI, no proactivity |
 
-MedClaw's unique position: **The only AI health companion that combines persistent medical memory, proactive care, and real-world action-taking in a privacy-first, locally-run architecture.**
+CarePilot's unique position: **The only AI health companion that combines persistent medical memory, proactive care, and real-world action-taking in a privacy-first, locally-run architecture.**
 
 ### C. Reference Links
 

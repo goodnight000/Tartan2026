@@ -1,6 +1,6 @@
-# MedClaw <-> OpenClaw Reuse Map
+# CarePilot <-> OpenClaw Reuse Map
 
-How each MedClaw requirement maps to existing OpenClaw infrastructure, what can be reused as-is, what needs modification, and what must be built from scratch.
+How each CarePilot requirement maps to existing OpenClaw infrastructure, what can be reused as-is, what needs modification, and what must be built from scratch.
 
 ---
 
@@ -14,7 +14,7 @@ How each MedClaw requirement maps to existing OpenClaw infrastructure, what can 
 - **Tools**: `memory_search` (hybrid semantic search) and `memory_get` (pull specific lines)
 - **Auto-indexing** of markdown files with filesystem watching
 
-### What MedClaw needs
+### What CarePilot needs
 | Need | OpenClaw Coverage | Work Required |
 |------|------------------|---------------|
 | Conversational memory (preferences, past interactions, lifestyle) | Fully covered | None - use as-is |
@@ -55,7 +55,7 @@ How each MedClaw requirement maps to existing OpenClaw infrastructure, what can 
 - Job context: can include recent message history
 - Delivery routing to any configured messaging channel
 
-### What MedClaw needs
+### What CarePilot needs
 | Need | OpenClaw Coverage | Work Required |
 |------|------------------|---------------|
 | Medication refill reminders | Cron system covers scheduling; needs custom logic to calculate run-out dates | Build a daily cron job that reads clinical-profile.md, computes days-until-empty for each medication, triggers a message if <= 5 days |
@@ -87,7 +87,7 @@ How each MedClaw requirement maps to existing OpenClaw infrastructure, what can 
 - **Execution pipeline**: before_tool_call hook -> execute -> tool_result_persist -> after_tool_call
 - **Built-in tools**: web-fetch, web-search, bash, browser automation, message sending, cron management, memory search
 
-### MedClaw custom tools to build
+### CarePilot custom tools to build
 
 | Tool | Purpose | Complexity | Dependencies |
 |------|---------|-----------|-------------|
@@ -104,7 +104,7 @@ How each MedClaw requirement maps to existing OpenClaw infrastructure, what can 
 ### What can be reused vs built
 - **Reuse entirely**: web-fetch, web-search (for health info lookups), message tool (for multi-channel delivery), cron tool (for scheduling), memory tools (for context retrieval), browser tool (for appointment booking web automation)
 - **Adapt**: Tool policy configuration (restrict to health-only tools)
-- **Build new**: All 9 MedClaw-specific tools listed above (all are relatively simple - most are file operations + API calls)
+- **Build new**: All 9 CarePilot-specific tools listed above (all are relatively simple - most are file operations + API calls)
 
 ### Key files to study
 - `/src/agents/tools/` - All existing tool implementations (patterns to follow)
@@ -124,9 +124,9 @@ How each MedClaw requirement maps to existing OpenClaw infrastructure, what can 
 - **tool_result_persist** - Transform transcript entries (sequential)
 - Plus session lifecycle and gateway hooks
 
-### MedClaw hook usage
+### CarePilot hook usage
 
-| Hook | MedClaw Use | Purpose |
+| Hook | CarePilot Use | Purpose |
 |------|------------|---------|
 | `before_agent_start` | Inject clinical profile into system prompt | Every conversation starts with full medical context |
 | `before_tool_call` | Consent gate for transactional tools | Block `appointment_book`, `medication_refill` unless user explicitly confirmed |
@@ -136,7 +136,7 @@ How each MedClaw requirement maps to existing OpenClaw infrastructure, what can 
 | `after_tool_call` | Memory update trigger | After booking or refill, automatically update clinical profile |
 
 ### Implementation approach
-All hooks are registered in the MedClaw plugin. No modification to OpenClaw core needed.
+All hooks are registered in the CarePilot plugin. No modification to OpenClaw core needed.
 
 ### Key files to study
 - `/src/plugins/hooks.ts` - Hook system implementation
@@ -152,10 +152,10 @@ All hooks are registered in the MedClaw plugin. No modification to OpenClaw core
 - Per-agent override via `agents.list[].identity.systemPromptOverride`
 - Plugin injection via `before_agent_start` hook
 
-### MedClaw approach
+### CarePilot approach
 - **Do not modify** the OpenClaw system prompt builder
-- **Use `before_agent_start` hook** to prepend MedClaw-specific instructions:
-  - "You are MedClaw, a personal AI family doctor..."
+- **Use `before_agent_start` hook** to prepend CarePilot-specific instructions:
+  - "You are CarePilot, a personal AI family doctor..."
   - Clinical profile data (injected from `clinical_profile_get`)
   - Safety rules (never diagnose, always redirect emergencies, cite uncertainty)
   - Tone guidelines (warm but professional, specific, transparent)
@@ -168,7 +168,7 @@ All hooks are registered in the MedClaw plugin. No modification to OpenClaw core
 ### What OpenClaw provides
 Built-in support for: WhatsApp, Telegram, Discord, Slack, Signal, iMessage, Google Chat, Line, MS Teams (via extension), Matrix, and more. Plus a WebChat UI.
 
-### MedClaw recommendation
+### CarePilot recommendation
 | Channel | Hackathon Use | Notes |
 |---------|--------------|-------|
 | **WebChat** (built-in UI) | Primary dev/demo channel | Easiest to set up, no external accounts needed, works in browser |
@@ -184,14 +184,14 @@ No channel code needs to be written. Just configure the channel auth tokens.
 
 ---
 
-## 7. Plugin Architecture (MedClaw as a Plugin)
+## 7. Plugin Architecture (CarePilot as a Plugin)
 
 ### Recommended structure
 
-MedClaw should be a single OpenClaw plugin. Based on the plugin system:
+CarePilot should be a single OpenClaw plugin. Based on the plugin system:
 
 ```
-extensions/medclaw/
+extensions/carepilot/
   openclaw.plugin.json    # Plugin manifest (id, config schema, tools, hooks)
   index.ts                # Plugin entry point
   tools/
@@ -206,7 +206,7 @@ extensions/medclaw/
     context-loader.ts     # before_agent_start clinical profile injection
     triage-hook.ts        # message_received emergency detection
   prompts/
-    system-prompt.md      # MedClaw persona and instructions
+    system-prompt.md      # CarePilot persona and instructions
     onboarding.md         # Guided intake conversation flow
   data/
     seasonal-health.json  # Seasonal health risk calendar
@@ -217,8 +217,8 @@ extensions/medclaw/
 ### What the plugin manifest needs
 ```json
 {
-  "id": "medclaw",
-  "name": "MedClaw - Personal AI Family Doctor",
+  "id": "carepilot",
+  "name": "CarePilot - Personal AI Family Doctor",
   "kind": "extension",
   "tools": [
     "triage_assess",
@@ -242,7 +242,7 @@ Everything listed above can be implemented purely as a plugin. No need to fork o
 - Faster development (no learning OpenClaw internals deeply)
 - Easier to update if OpenClaw releases new versions
 - Clean separation of concerns
-- The plugin API provides everything MedClaw needs
+- The plugin API provides everything CarePilot needs
 
 ---
 
@@ -274,7 +274,7 @@ For the hackathon, you could also skip Google Places entirely and use **simulate
 | UI | Chat interface | None | 100% reuse (WebChat or mobile channel) |
 | Appointment booking | Simulated booking flow | Low | New, but simple |
 
-**Bottom line**: OpenClaw provides roughly 60-70% of what MedClaw needs out of the box. The remaining 30-40% is health-specific domain logic packaged as a plugin.
+**Bottom line**: OpenClaw provides roughly 60-70% of what CarePilot needs out of the box. The remaining 30-40% is health-specific domain logic packaged as a plugin.
 
 ---
 
@@ -294,9 +294,9 @@ For the hackathon, you could also skip Google Places entirely and use **simulate
 ## 12. Recommended First Steps
 
 1. **Get OpenClaw running locally** - Clone, install deps, verify the gateway starts and WebChat works
-2. **Create the MedClaw plugin skeleton** - `openclaw.plugin.json` + `index.ts` with one dummy tool
+2. **Create the CarePilot plugin skeleton** - `openclaw.plugin.json` + `index.ts` with one dummy tool
 3. **Write the clinical profile schema** - Define the markdown format for `clinical-profile.md`
-4. **Write the system prompt** - MedClaw persona, safety rules, tone guidelines
+4. **Write the system prompt** - CarePilot persona, safety rules, tone guidelines
 5. **Build `clinical_profile_get` and `clinical_profile_update`** - Core memory tools
 6. **Build `triage_assess`** - Safety-first
 7. **Test the onboarding flow** - Guided intake conversation
