@@ -26,6 +26,10 @@ def test_voice_transcribe_success_persists_scoped_analysis(client, auth_headers,
     assert payload["confidence"] == 0.92
     assert payload["segments"]
     assert payload["document_id"].startswith("doc_")
+    assert payload["requires_confirmation"] is True
+    assert payload["editable_transcript"] is True
+    assert payload["triage"]["tier"] in {"ROUTINE", "URGENT_24H", "EMERGENT"}
+    assert payload["triage"]["emergency"] is False
 
     with backend_module.container.db.connection() as conn:
         doc = conn.execute(
@@ -82,3 +86,27 @@ def test_voice_transcribe_provider_timeout_surfaces_clear_error(client, auth_hea
     )
     assert response.status_code == 504
     assert "timed out" in response.json()["detail"].lower()
+
+
+def test_voice_transcribe_emergent_metadata_when_transcript_is_high_risk(client, auth_headers, backend_module, monkeypatch):
+    def fake_transcribe(**kwargs):
+        return {
+            "transcript_text": "I have chest pain and trouble breathing.",
+            "confidence": 0.98,
+            "segments": [{"id": 0, "text": "I have chest pain and trouble breathing."}],
+            "provider_payload": {"mock": True},
+        }
+
+    monkeypatch.setattr(backend_module, "_openai_whisper_transcribe", fake_transcribe)
+    response = client.post(
+        "/voice/transcribe",
+        headers=auth_headers("user-a"),
+        data={"session_key": "session-a"},
+        files={"audio": ("symptoms.wav", b"wav-bytes", "audio/wav")},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["triage"]["tier"] == "EMERGENT"
+    assert payload["triage"]["emergency"] is True
+    assert payload["requires_confirmation"] is True
+    assert payload["editable_transcript"] is True
