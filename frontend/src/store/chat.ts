@@ -3,7 +3,7 @@ import type { ActionPlan, ActionResult, TriageLevel } from "@/lib/types";
 
 export type ChatMessage = {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "carebase";
   content: string;
   timestamp: number;
   triageLevel?: TriageLevel;

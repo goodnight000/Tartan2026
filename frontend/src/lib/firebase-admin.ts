@@ -6,7 +6,16 @@ let _app: App | undefined;
 let _db: Firestore | undefined;
 let _auth: Auth | undefined;
 
+export const firebaseAdminEnabled = Boolean(
+  process.env.FIREBASE_PROJECT_ID &&
+    process.env.FIREBASE_CLIENT_EMAIL &&
+    process.env.FIREBASE_PRIVATE_KEY
+);
+
 function ensureInit(): App {
+  if (!firebaseAdminEnabled) {
+    throw new Error("Firebase admin not configured.");
+  }
   if (!_app) {
     if (getApps().length) {
       _app = getApps()[0];

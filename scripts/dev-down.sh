@@ -3,6 +3,7 @@ set -euo pipefail
 
 BACKEND_PID_FILE="/tmp/carepilot-backend.pid"
 FRONTEND_PID_FILE="/tmp/carepilot-frontend.pid"
+CAREBASE_PID_FILE="/tmp/carebase-server.pid"
 
 stop_pid() {
   local pid_file="$1"
@@ -28,3 +29,4 @@ stop_pid() {
 
 stop_pid "$BACKEND_PID_FILE" "backend"
 stop_pid "$FRONTEND_PID_FILE" "frontend"
+stop_pid "$CAREBASE_PID_FILE" "carebase-server"

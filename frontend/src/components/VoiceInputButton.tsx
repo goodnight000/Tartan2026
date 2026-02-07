@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { auth } from "@/lib/firebase";
+import { useAuthUser } from "@/lib/useAuth";
+import { getIdTokenMaybe } from "@/lib/auth-helpers";
 
 export function VoiceInputButton({
   onTranscript,
@@ -26,6 +27,7 @@ export function VoiceInputButton({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const { user } = useAuthUser();
 
   useEffect(() => {
     onStatusChange?.({
@@ -73,15 +75,7 @@ export function VoiceInputButton({
       setErrorText("");
       setStatusText("Transcribing...");
       try {
-        let idToken: string | undefined;
-        const user = auth.currentUser;
-        if (user) {
-          try {
-            idToken = await user.getIdToken();
-          } catch {
-            // noop
-          }
-        }
+        const idToken = await getIdTokenMaybe(user);
 
         const formData = new FormData();
         formData.append("audio", blob, fileNameForBlob(blob));
@@ -123,7 +117,7 @@ export function VoiceInputButton({
         setProcessing(false);
       }
     },
-    [onTranscript, sessionKey]
+    [onTranscript, sessionKey, user]
   );
 
   const startRecording = useCallback(async () => {
