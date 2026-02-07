@@ -170,7 +170,11 @@ export default function AppPage() {
         return {
           name: med.name ?? "Unknown",
           dose: med.dose ?? "N/A",
-          frequency: `${med.frequency_per_day}x/day`,
+          frequency: med.cadence
+            ? med.cadence.replace(/_/g, " ")
+            : med.frequency_per_day
+              ? `${med.frequency_per_day}x/day`
+              : "as directed",
           status,
           adherenceStreak: Array.from({ length: 7 }, (_, i) => {
             // Deterministic per-medication streak based on name + day index

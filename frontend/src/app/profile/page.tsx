@@ -104,88 +104,213 @@ export default function ProfilePage() {
           </div>
           {profileQuery.isLoading ? (
             <SkeletonCard />
-          ) : profileQuery.data ? (
-            <div className="space-y-4 text-sm text-[color:var(--cp-text)]">
-              <div>
+        ) : profileQuery.data ? (
+          <div className="space-y-4 text-sm text-[color:var(--cp-text)]">
+            <div>
+              <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
                   Conditions
                 </span>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {profileQuery.data.conditions.length ? (
-                    profileQuery.data.conditions.map((condition) => (
-                      <Badge key={condition} className="bg-[color:var(--cp-primary-soft)] text-[color:var(--cp-primary)] border-[color:var(--cp-primary)]/20">
-                        {condition}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-[color:var(--cp-muted)]">None</span>
-                  )}
-                </div>
+                <Button variant="ghost" size="sm" onClick={() => router.push("/onboarding?step=health_baseline")}>
+                  Edit
+                </Button>
               </div>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {(profileQuery.data.conditions?.length
+                  ? profileQuery.data.conditions.map((condition) => condition.name)
+                  : profileQuery.data.conditions_legacy ?? []
+                ).length ? (
+                  (profileQuery.data.conditions?.length
+                    ? profileQuery.data.conditions.map((condition) => condition.name)
+                    : profileQuery.data.conditions_legacy ?? []
+                  ).map((condition) => (
+                    <Badge key={condition} className="bg-[color:var(--cp-primary-soft)] text-[color:var(--cp-primary)] border-[color:var(--cp-primary)]/20">
+                      {condition}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-[color:var(--cp-muted)]">None</span>
+                )}
+              </div>
+            </div>
 
-              <div>
+            <div>
+              <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
                   Allergies
                 </span>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {profileQuery.data.allergies.length ? (
-                    profileQuery.data.allergies.map((allergy) => (
-                      <Badge key={allergy} className="border-[color:var(--cp-danger)]/20 bg-[color:color-mix(in_srgb,var(--cp-danger)_8%,white_92%)] text-[color:var(--cp-danger)]">
-                        {allergy}
+                <Button variant="ghost" size="sm" onClick={() => router.push("/onboarding?step=medications_allergies")}>
+                  Edit
+                </Button>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {(profileQuery.data.allergies?.length
+                  ? profileQuery.data.allergies.map((allergy) => allergy.allergen)
+                  : profileQuery.data.allergies_legacy ?? []
+                ).length ? (
+                  (profileQuery.data.allergies?.length
+                    ? profileQuery.data.allergies.map((allergy) => allergy.allergen)
+                    : profileQuery.data.allergies_legacy ?? []
+                  ).map((allergy) => (
+                    <Badge key={allergy} className="border-[color:var(--cp-danger)]/20 bg-[color:color-mix(in_srgb,var(--cp-danger)_8%,white_92%)] text-[color:var(--cp-danger)]">
+                      {allergy}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-[color:var(--cp-muted)]">None</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
+                  Medications
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => router.push("/onboarding?step=medications_allergies")}>
+                  Edit
+                </Button>
+              </div>
+              <div className="mt-2 space-y-2">
+                {profileQuery.data.meds?.length ? (
+                  profileQuery.data.meds.map((med) => (
+                    <div
+                      key={`${med.name}-${med.dose ?? ""}`}
+                      className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2"
+                    >
+                      <div>
+                        <span className="font-semibold">{med.name}</span>
+                        <span className="ml-2 text-xs text-[color:var(--cp-muted)]">{med.dose || "dose n/a"}</span>
+                      </div>
+                      <span className="text-xs text-[color:var(--cp-muted)]">
+                        {med.cadence ? med.cadence.replace(/_/g, " ") : `${med.frequency_per_day ?? "?"}x/day`}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-[color:var(--cp-muted)]">None</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
+                  Procedures
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => router.push("/onboarding?step=health_baseline")}>
+                  Edit
+                </Button>
+              </div>
+              <div className="mt-2 space-y-2">
+                {profileQuery.data.procedures?.length ? (
+                  profileQuery.data.procedures.map((procedure) => (
+                    <div
+                      key={`${procedure.name}-${procedure.approximate_year ?? ""}`}
+                      className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2"
+                    >
+                      <span className="font-semibold">{procedure.name}</span>
+                      <span className="text-xs text-[color:var(--cp-muted)]">
+                        {procedure.approximate_year ?? "year n/a"}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-[color:var(--cp-muted)]">None</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
+                  Demographics & Lifestyle
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => router.push("/onboarding?step=health_baseline")}>
+                  Edit
+                </Button>
+              </div>
+              <div className="mt-2 grid gap-2 text-xs text-[color:var(--cp-muted)] md:grid-cols-2">
+                <div>Year of birth: {profileQuery.data.demographics?.year_of_birth || "Not set"}</div>
+                <div>Sex assigned: {profileQuery.data.demographics?.sex_assigned_at_birth?.replace(/_/g, " ") || "Not set"}</div>
+                <div>Height: {profileQuery.data.demographics?.height_cm ? `${profileQuery.data.demographics.height_cm} cm` : "Not set"}</div>
+                <div>Weight: {profileQuery.data.demographics?.weight_kg ? `${profileQuery.data.demographics.weight_kg} kg` : "Not set"}</div>
+                <div>Smoking: {profileQuery.data.lifestyle?.smoking_status || "Not set"}</div>
+                <div>Alcohol: {profileQuery.data.lifestyle?.alcohol_use || "Not set"}</div>
+                <div>Activity: {profileQuery.data.lifestyle?.activity_level || "Not set"}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
+                  Family history
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => router.push("/onboarding?step=health_baseline")}>
+                  Edit
+                </Button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(() => {
+                  const entries = profileQuery.data.family_history
+                    ? Object.entries(profileQuery.data.family_history).filter(([, value]) => value)
+                    : [];
+                  return entries.length ? (
+                    entries.map(([key]) => (
+                      <Badge key={key} className="border-[color:var(--cp-line)] bg-white/80 text-[color:var(--cp-text)]">
+                        {key.replace(/_/g, " ")}
                       </Badge>
                     ))
                   ) : (
                     <span className="text-[color:var(--cp-muted)]">None</span>
-                  )}
-                </div>
+                  );
+                })()}
               </div>
+            </div>
 
-              <div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
-                  Medications
-                </span>
-                <div className="mt-2 space-y-2">
-                  {profileQuery.data.meds.length ? (
-                    profileQuery.data.meds.map((med, index) => (
-                      <div
-                        key={`${index}-${med.name}-${med.dose}`}
-                        className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2"
-                      >
-                        <div>
-                          <span className="font-semibold">{med.name}</span>
-                          <span className="ml-2 text-xs text-[color:var(--cp-muted)]">{med.dose || "dose n/a"}</span>
-                        </div>
-                        <span className="text-xs text-[color:var(--cp-muted)]">{med.frequency_per_day}x/day</span>
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-[color:var(--cp-muted)]">None</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-[color:var(--cp-line)] bg-white/72 p-3">
+            <div className="rounded-2xl border border-[color:var(--cp-line)] bg-white/72 p-3">
+              <div className="flex items-center justify-between">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
                   Care Preferences
                 </div>
-                <div className="mt-2 grid gap-2 text-xs text-[color:var(--cp-muted)] md:grid-cols-2">
-                  <div>Radius: {profileQuery.data.preferences.radius_miles} mi</div>
-                  <div>Open now: {profileQuery.data.preferences.open_now ? "Yes" : "No"}</div>
-                  <div>Reminder mode: {profileQuery.data.preferences.reminder_mode || "all"}</div>
-                  <div>Proactive state: {profileQuery.data.preferences.proactive_state || "active"}</div>
-                  <div>Pharmacy: {profileQuery.data.preferences.preferred_pharmacy || "Not set"}</div>
-                  <div>
-                    Quiet hours: {profileQuery.data.preferences.quiet_hours?.start || "22:00"} -{" "}
-                    {profileQuery.data.preferences.quiet_hours?.end || "08:00"}
-                  </div>
+                <Button variant="ghost" size="sm" onClick={() => router.push("/onboarding?step=care_logistics")}>
+                  Edit
+                </Button>
+              </div>
+              <div className="mt-2 grid gap-2 text-xs text-[color:var(--cp-muted)] md:grid-cols-2">
+                <div>Priority: {profileQuery.data.preferences?.care_priority?.replace(/_/g, " ") || "Not set"}</div>
+                <div>Radius: {profileQuery.data.preferences?.radius_miles || "Not set"} mi</div>
+                <div>Pharmacy: {profileQuery.data.preferences?.preferred_pharmacy || "Not set"}</div>
+                <div>Preferred days: {profileQuery.data.preferences?.preferred_days?.join(", ") || "Not set"}</div>
+                <div>Appointment windows: {profileQuery.data.preferences?.appointment_windows?.join(", ") || "Not set"}</div>
+                <div>Provider gender: {profileQuery.data.preferences?.provider_gender_preference?.replace(/_/g, " ") || "Not set"}</div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[color:var(--cp-line)] bg-white/72 p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
+                  Reminder Controls
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => router.push("/onboarding?step=reminders_controls")}>
+                  Edit
+                </Button>
+              </div>
+              <div className="mt-2 grid gap-2 text-xs text-[color:var(--cp-muted)] md:grid-cols-2">
+                <div>Mode: {profileQuery.data.reminders?.reminder_mode || "all"}</div>
+                <div>State: {profileQuery.data.reminders?.proactive_state || "active"}</div>
+                <div>
+                  Quiet hours: {profileQuery.data.reminders?.quiet_hours?.start || "22:00"} -{" "}
+                  {profileQuery.data.reminders?.quiet_hours?.end || "08:00"}
                 </div>
               </div>
-
-              <p className="text-[10px] text-[color:var(--cp-muted)]">
-                Last updated: {new Date(profileQuery.data.updated_at).toLocaleString()}
-              </p>
             </div>
-          ) : (
+
+            <p className="text-[10px] text-[color:var(--cp-muted)]">
+              Last updated: {new Date(profileQuery.data.updated_at).toLocaleString()}
+            </p>
+          </div>
+        ) : (
             <EmptyState
               icon={FileText}
               title="No profile on file"
