@@ -10,10 +10,14 @@ export function VoiceInputButton({
   onTranscript,
   sessionKey,
   className,
+  showStatusText = true,
+  onStatusChange,
 }: {
   onTranscript: (text: string) => void;
   sessionKey: string;
   className?: string;
+  showStatusText?: boolean;
+  onStatusChange?: (payload: { message: string; isError: boolean }) => void;
 }) {
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -22,6 +26,13 @@ export function VoiceInputButton({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    onStatusChange?.({
+      message: errorText || statusText,
+      isError: Boolean(errorText),
+    });
+  }, [errorText, onStatusChange, statusText]);
 
   useEffect(() => {
     return () => {
@@ -227,7 +238,7 @@ export function VoiceInputButton({
           )}
         </button>
       </div>
-      {(statusText || errorText) && (
+      {showStatusText && (statusText || errorText) && (
         <span
           className={cn(
             "text-xs italic",

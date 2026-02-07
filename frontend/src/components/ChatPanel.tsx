@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, FileUp } from "lucide-react";
+import { Send, Plus, Upload, X, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ActionConfirmModal } from "@/components/ActionConfirmModal";
@@ -74,10 +74,16 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [actionPending, setActionPending] = useState(false);
-  const [mode, setMode] = useState<"type" | "voice" | "document">("type");
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<{ message: string; isError: boolean }>({
+    message: "",
+    isError: false,
+  });
   const { push } = useToast();
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentAreaRef = useRef<HTMLDivElement>(null);
   const {
     messages,
     sessionKey,
@@ -110,14 +116,26 @@ export function ChatPanel() {
     }
   }, [input]);
 
-  const modeHint = useMemo(() => {
-    if (mode === "voice") return "Voice capture will transcribe to editable text before send.";
-    if (mode === "document") return "Upload lab or imaging reports for extraction and plain-language interpretation.";
-    return "Ask a question, report symptoms, or request a care coordination action.";
-  }, [mode]);
+  useEffect(() => {
+    if (!attachmentMenuOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (attachmentAreaRef.current?.contains(event.target as Node)) return;
+      setAttachmentMenuOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAttachmentMenuOpen(false);
+    };
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [attachmentMenuOpen]);
 
   const handleSend = async () => {
     if (!input.trim() || pending) return;
+    setAttachmentMenuOpen(false);
     const content = input.trim();
     const priorMessages = useChatStore.getState().messages;
     const historyForRequest = [...priorMessages, { role: "user" as const, content }];
@@ -268,31 +286,10 @@ export function ChatPanel() {
             {!triageLevel && <span className="status-chip status-chip--info">Triage Active</span>}
           </div>
         </div>
-
-        {/* Mode selector */}
-        <div className="rounded-2xl border border-[color:var(--cp-line)] bg-white/70 p-2">
-          <div className="grid grid-cols-3 gap-2">
-            {([
-              ["type", "Type", null],
-              ["voice", "Voice", <Mic key="mic" className="h-3.5 w-3.5" />],
-              ["document", "Document", <FileUp key="doc" className="h-3.5 w-3.5" />],
-            ] as const).map(([value, label, icon]) => (
-              <Button
-                key={value}
-                type="button"
-                variant={mode === value ? "default" : "ghost"}
-                size="sm"
-                icon={icon}
-                onClick={() => setMode(value)}
-                aria-label={`${label} input mode`}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        <p className="text-sm text-[color:var(--cp-muted)]">{modeHint}</p>
+        <p className="text-sm text-[color:var(--cp-muted)]">
+          Keep typing in one thread. Use <span className="font-semibold">+</span> to upload files and
+          the microphone for voice-to-text.
+        </p>
 
         {/* Action staged banner */}
         {actionPlan && (
@@ -352,59 +349,136 @@ export function ChatPanel() {
           {isThinking && <ThinkingIndicator />}
         </div>
 
-        {/* Input area */}
-        {mode === "voice" && (
-          <div className="flex items-center gap-3">
-            <VoiceInputButton
+        {uploadPanelOpen && (
+          <div className="space-y-3 rounded-2xl border border-[color:var(--cp-line)] bg-white/72 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm text-[color:var(--cp-text)]">
+                <Paperclip className="h-4 w-4 text-[color:var(--cp-muted)]" aria-hidden="true" />
+                <span className="font-semibold">Attach and Analyze File</span>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={() => setUploadPanelOpen(false)}
+                aria-label="Close upload panel"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+            <p className="text-xs text-[color:var(--cp-muted)]">
+              Upload first, then continue the same conversation with follow-up questions.
+            </p>
+            <DocumentUploadFlow
               sessionKey={sessionKey}
-              onTranscript={(text) => {
-                setInput(text);
-                setMode("type");
+              onComplete={(result: DocumentUploadResult) => {
+                appendMessage({
+                  role: "user",
+                  content: `Uploaded ${result.docType}: ${result.fileName}`,
+                });
+                appendMessage({ role: "assistant", content: result.messageForChat });
+                setUploadPanelOpen(false);
+                setInput((current) =>
+                  current.trim()
+                    ? current
+                    : "Can you help me understand the most important findings from this file?"
+                );
+                push({
+                  title: "File analyzed",
+                  description: `${result.fileName} was added to this conversation.`,
+                  variant: "success",
+                });
               }}
             />
-            <span className="text-xs text-[color:var(--cp-muted)]">Tap mic, speak, then edit before sending</span>
           </div>
         )}
 
-        {mode === "document" && (
-          <DocumentUploadFlow
-            sessionKey={sessionKey}
-            onComplete={(result: DocumentUploadResult) => {
-              appendMessage({
-                role: "user",
-                content: `Uploaded ${result.docType}: ${result.fileName}`,
-              });
-              appendMessage({ role: "assistant", content: result.messageForChat });
-              setMode("type");
-            }}
-          />
-        )}
-
-        <div className="flex gap-2">
-          <textarea
-            ref={textareaRef}
-            placeholder={mode === "type" ? "Ask CarePilot..." : "Compose from transcript or extracted report..."}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                handleSend();
-              }
-            }}
-            rows={1}
-            className="flex-1 resize-none rounded-2xl border border-[color:var(--cp-line)] bg-white/75 px-4 py-2.5 text-sm text-[color:var(--cp-text)] placeholder:text-[color:var(--cp-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--cp-primary)] focus-visible:ring-offset-2"
-            aria-label="Chat message input"
-          />
-          <Button
-            onClick={handleSend}
-            disabled={pending}
-            loading={pending}
-            size="icon"
-            aria-label="Send message"
-          >
-            <Send className="h-4 w-4" aria-hidden="true" />
-          </Button>
+        {/* Unified composer */}
+        <div className="space-y-2 rounded-2xl border border-[color:var(--cp-line)] bg-white/78 p-2">
+          <div className="flex items-end gap-2">
+            <div ref={attachmentAreaRef} className="relative shrink-0">
+              <Button
+                type="button"
+                size="icon"
+                variant={attachmentMenuOpen ? "outline" : "ghost"}
+                onClick={() => setAttachmentMenuOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={attachmentMenuOpen}
+                aria-label="Add attachment"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </Button>
+              {attachmentMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute bottom-12 left-0 z-20 w-56 rounded-xl border border-[color:var(--cp-line)] bg-white p-1 shadow-xl"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[color:var(--cp-text)] hover:bg-[color:var(--cp-surface)]"
+                    onClick={() => {
+                      setUploadPanelOpen(true);
+                      setAttachmentMenuOpen(false);
+                    }}
+                  >
+                    <Upload className="h-4 w-4 text-[color:var(--cp-muted)]" aria-hidden="true" />
+                    Upload medical file
+                  </button>
+                </div>
+              )}
+            </div>
+            <textarea
+              ref={textareaRef}
+              placeholder="Ask CarePilot..."
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  handleSend();
+                }
+              }}
+              rows={1}
+              className="flex-1 resize-none rounded-2xl border border-[color:var(--cp-line)] bg-white/75 px-4 py-2.5 text-sm text-[color:var(--cp-text)] placeholder:text-[color:var(--cp-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--cp-primary)] focus-visible:ring-offset-2"
+              aria-label="Chat message input"
+            />
+            <VoiceInputButton
+              className="shrink-0"
+              sessionKey={sessionKey}
+              showStatusText={false}
+              onStatusChange={setVoiceStatus}
+              onTranscript={(text) => {
+                setInput((current) => (current.trim() ? `${current.trimEnd()} ${text}` : text));
+                textareaRef.current?.focus();
+              }}
+            />
+            <Button
+              onClick={handleSend}
+              disabled={pending || !input.trim()}
+              loading={pending}
+              size="icon"
+              aria-label="Send message"
+            >
+              <Send className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-[color:var(--cp-muted)]">
+            <span>Press Enter to send. Shift+Enter for a new line.</span>
+            <span>Voice inserts editable text before send.</span>
+          </div>
+          {voiceStatus.message && (
+            <p
+              className={`px-1 text-xs ${
+                voiceStatus.isError
+                  ? "text-[color:var(--cp-danger)]"
+                  : "text-[color:var(--cp-muted)]"
+              }`}
+              role={voiceStatus.isError ? "alert" : "status"}
+            >
+              {voiceStatus.message}
+            </p>
+          )}
         </div>
       </Card>
 
