@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import os
 import re
@@ -427,6 +428,13 @@ def _extract_json_object(raw_text: str) -> dict[str, Any] | None:
     return None
 
 
+def _normalize_anthropic_model_name(model_name: str | None) -> str:
+    candidate = str(model_name or "").strip()
+    if candidate.lower().startswith("anthropic/"):
+        candidate = candidate.split("/", 1)[1].strip()
+    return candidate or "claude-3-5-sonnet-latest"
+
+
 def _coerce_completion_text(response_json: dict[str, Any]) -> str:
     choices = response_json.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -457,7 +465,7 @@ def _chat_provider_candidates() -> list[dict[str, Any]]:
                 "provider": "anthropic",
                 "base_url": _ANTHROPIC_API_BASE,
                 "api_key": anthropic_api_key,
-                "model": (os.getenv("ANTHROPIC_MODEL") or "claude-3-5-sonnet-latest").strip(),
+                "model": _normalize_anthropic_model_name(os.getenv("ANTHROPIC_MODEL")),
             }
         )
 
@@ -502,6 +510,56 @@ def _chat_provider_candidates() -> list[dict[str, Any]]:
         "anthropic": "anthropic",
         "dedalus": "dedalus",
         "openrouter": "openrouter",
+        "openai": "openai",
+    }
+    canonical = aliases.get(provider_preference)
+    if not canonical:
+        return candidates
+    preferred = [candidate for candidate in candidates if candidate["provider"] == canonical]
+    others = [candidate for candidate in candidates if candidate["provider"] != canonical]
+    return preferred + others
+
+
+def _document_provider_candidates() -> list[dict[str, Any]]:
+    provider_preference = (os.getenv("CAREPILOT_DOCUMENT_PROVIDER") or "auto").strip().lower()
+    candidates: list[dict[str, Any]] = []
+
+    anthropic_api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+    if anthropic_api_key:
+        candidates.append(
+            {
+                "provider": "anthropic",
+                "base_url": _ANTHROPIC_API_BASE,
+                "api_key": anthropic_api_key,
+                "model": _normalize_anthropic_model_name(
+                    os.getenv("CAREPILOT_DOCUMENT_ANTHROPIC_MODEL")
+                    or os.getenv("ANTHROPIC_MODEL")
+                    or "claude-3-5-sonnet-latest"
+                ),
+            }
+        )
+
+    openai_api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if openai_api_key:
+        candidates.append(
+            {
+                "provider": "openai",
+                "base_url": _OPENAI_API_BASE,
+                "api_key": openai_api_key,
+                "model": (
+                    os.getenv("CAREPILOT_DOCUMENT_OPENAI_MODEL")
+                    or os.getenv("CAREPILOT_DOCUMENT_MODEL")
+                    or "gpt-4o-mini"
+                ).strip(),
+            }
+        )
+
+    if provider_preference in {"", "auto"}:
+        return candidates
+
+    aliases = {
+        "claude": "anthropic",
+        "anthropic": "anthropic",
         "openai": "openai",
     }
     canonical = aliases.get(provider_preference)
@@ -651,7 +709,8 @@ def _llm_chat_reply(
         "Sound human, natural, and concise. Avoid robotic boilerplate. "
         "Maintain continuity with the user's current goal and recent context; do not switch topics abruptly. "
         "For symptoms, provide likely possibilities and practical next steps, clearly marking uncertainty. "
-        "Never claim a confirmed diagnosis, and do not replace urgent emergency instructions."
+        "Never claim a confirmed diagnosis, and do not replace urgent emergency instructions. "
+        "Assume the user is a patient or caregiver unless they explicitly identify themselves as a clinician."
     )
 
     context_snapshot = _llm_context_snapshot(context)
@@ -830,6 +889,31 @@ def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
     return "\n".join(deduped)[:20000]
 
 
+def _extract_text_from_pdf_with_pypdf(pdf_bytes: bytes) -> str:
+    try:
+        import pypdf  # type: ignore
+    except Exception:
+        return ""
+
+    try:
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    except Exception:
+        return ""
+
+    chunks: list[str] = []
+    for page in getattr(reader, "pages", [])[:100]:
+        try:
+            text = str(page.extract_text() or "")
+        except Exception:
+            continue
+        cleaned = re.sub(r"\s+", " ", text).strip()
+        if cleaned:
+            chunks.append(cleaned)
+        if sum(len(item) for item in chunks) >= 24000:
+            break
+    return "\n".join(chunks)[:20000]
+
+
 def _extract_document_text(file_name: str, mime_type: str, document_bytes: bytes) -> tuple[str, float, str]:
     ext = _extension_from_filename(file_name)
     if mime_type.startswith("text/") or ext in {".txt", ".csv", ".json", ".md"}:
@@ -837,9 +921,13 @@ def _extract_document_text(file_name: str, mime_type: str, document_bytes: bytes
         confidence = 0.95 if text else 0.0
         return text, confidence, "direct_text"
     if mime_type == "application/pdf" or ext == ".pdf":
-        text = _extract_text_from_pdf_bytes(document_bytes).strip()
-        confidence = 0.8 if len(text) > 200 else 0.45 if len(text) > 40 else 0.2
-        return text, confidence, "pdf_text_extract"
+        text = _extract_text_from_pdf_with_pypdf(document_bytes).strip()
+        method = "pdf_text_extract_pypdf"
+        if not text:
+            text = _extract_text_from_pdf_bytes(document_bytes).strip()
+            method = "pdf_text_extract_legacy"
+        confidence = 0.9 if len(text) > 200 else 0.55 if len(text) > 40 else 0.2
+        return text, confidence, method
     if mime_type.startswith("image/") or ext in {".png", ".jpg", ".jpeg", ".webp"}:
         return "", 0.0, "image_no_local_ocr"
     text = document_bytes.decode("utf-8", errors="ignore").strip()
@@ -848,6 +936,40 @@ def _extract_document_text(file_name: str, mime_type: str, document_bytes: bytes
 
 
 def _normalize_follow_up_questions(raw_questions: Any) -> list[str]:
+    def _to_patient_voice(question: str) -> str:
+        rewritten = question
+        normalized = question.lower().strip()
+        if normalized.startswith("what was the clinical indication for ordering"):
+            rewritten = "Why was this test ordered for me?"
+        elif normalized.startswith("what is the clinical indication for ordering"):
+            rewritten = "Why was this test ordered for me?"
+        else:
+            leading_rewrites: list[tuple[str, str]] = [
+                (r"^\s*does the patient\b", "Do I"),
+                (r"^\s*is the patient\b", "Am I"),
+                (r"^\s*has the patient\b", "Have I"),
+                (r"^\s*can the patient\b", "Can I"),
+                (r"^\s*should the patient\b", "Should I"),
+                (r"^\s*will the patient\b", "Will I"),
+                (r"^\s*did the patient\b", "Did I"),
+                (r"^\s*what medications is the patient\b", "What medications am I"),
+                (r"^\s*what medications does the patient\b", "What medications do I"),
+                (r"^\s*what symptoms does the patient\b", "What symptoms do I"),
+                (r"^\s*what symptoms is the patient\b", "What symptoms am I"),
+            ]
+            for pattern, replacement in leading_rewrites:
+                rewritten, count = re.subn(pattern, replacement, rewritten, flags=re.IGNORECASE)
+                if count:
+                    break
+
+        rewritten = re.sub(r"\bthe patient\b", "I", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\bthis patient\b", "me", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\bpatient's\b", "my", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\s+", " ", rewritten).strip()
+        if rewritten and not rewritten.endswith("?"):
+            rewritten = f"{rewritten.rstrip('.!')}?"
+        return rewritten
+
     questions: list[str] = []
     if isinstance(raw_questions, list):
         for item in raw_questions:
@@ -855,7 +977,7 @@ def _normalize_follow_up_questions(raw_questions: Any) -> list[str]:
                 continue
             cleaned = re.sub(r"\s+", " ", item).strip()
             if cleaned:
-                questions.append(cleaned)
+                questions.append(_to_patient_voice(cleaned))
     if len(questions) >= 3:
         return questions[:5]
     while len(questions) < 3:
@@ -968,22 +1090,24 @@ def _enforce_document_safety(
     }
 
 
-def _openai_document_interpret(
+def _document_prompt_lines(
     *,
     file_name: str,
-    mime_type: str,
-    document_bytes: bytes,
-    extracted_text: str,
     category: str,
+    extracted_text: str,
     user_question: str | None,
-) -> dict[str, Any]:
-    api_key = _require_openai_api_key()
-    model = (os.getenv("CAREPILOT_DOCUMENT_MODEL") or "gpt-4o-mini").strip()
-
+) -> list[str]:
     prompt_lines = [
-        "You are a clinical documentation assistant.",
+        "You are a patient-facing clinical documentation assistant.",
         "Return JSON only with keys: key_findings, plain_language_summary, follow_up_questions, uncertainty_statement, safety_guidance, urgency_level, high_risk_flags.",
-        "Rules: keep uncertainty explicit, never provide diagnosis, never claim treatment certainty, suggest clinician follow-up.",
+        (
+            "Rules: keep uncertainty explicit, never provide diagnosis, never claim treatment certainty. "
+            "Write in plain language for a patient/caregiver."
+        ),
+        (
+            "follow_up_questions must be questions the user can ask their clinician in first person "
+            "(use 'I'/'my'). Never phrase as chart-review questions about 'the patient'."
+        ),
         "urgency_level must be routine or urgent.",
         f"file_name: {file_name}",
         f"file_category: {category}",
@@ -995,6 +1119,30 @@ def _openai_document_interpret(
         prompt_lines.append(extracted_text[:12000])
     else:
         prompt_lines.append("No local text extraction was available.")
+    return prompt_lines
+
+
+def _openai_document_interpret_with_provider(
+    *,
+    provider: dict[str, Any],
+    file_name: str,
+    mime_type: str,
+    document_bytes: bytes,
+    extracted_text: str,
+    category: str,
+    user_question: str | None,
+) -> dict[str, Any]:
+    model = str(provider.get("model") or "gpt-4o-mini")
+    api_key = str(provider.get("api_key") or "").strip()
+    base_url = str(provider.get("base_url") or _OPENAI_API_BASE).rstrip("/")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="OpenAI API key is not configured.")
+    prompt_lines = _document_prompt_lines(
+        file_name=file_name,
+        category=category,
+        extracted_text=extracted_text,
+        user_question=user_question,
+    )
 
     user_content: list[dict[str, Any]] = [{"type": "text", "text": "\n".join(prompt_lines)}]
     if mime_type.startswith("image/"):
@@ -1005,7 +1153,13 @@ def _openai_document_interpret(
         "model": model,
         "temperature": 0.1,
         "messages": [
-            {"role": "system", "content": "Provide a safe, non-diagnostic medical document summary in strict JSON."},
+            {
+                "role": "system",
+                "content": (
+                    "Provide a safe, non-diagnostic medical document summary in strict JSON. "
+                    "Audience is a patient/caregiver (not a clinician)."
+                ),
+            },
             {"role": "user", "content": user_content},
         ],
     }
@@ -1013,7 +1167,7 @@ def _openai_document_interpret(
 
     try:
         with httpx.Client(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
-            response = client.post(f"{_OPENAI_API_BASE}/chat/completions", headers=headers, json=payload)
+            response = client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
     except httpx.TimeoutException as exc:
         raise HTTPException(status_code=504, detail="Document interpretation provider timed out.") from exc
     except httpx.HTTPError as exc:
@@ -1037,6 +1191,160 @@ def _openai_document_interpret(
     if parsed is None:
         raise HTTPException(status_code=502, detail="Document interpretation provider returned non-JSON output.")
     return parsed
+
+
+def _openai_document_interpret(
+    *,
+    file_name: str,
+    mime_type: str,
+    document_bytes: bytes,
+    extracted_text: str,
+    category: str,
+    user_question: str | None,
+) -> dict[str, Any]:
+    provider = {
+        "provider": "openai",
+        "base_url": _OPENAI_API_BASE,
+        "api_key": _require_openai_api_key(),
+        "model": (os.getenv("CAREPILOT_DOCUMENT_MODEL") or "gpt-4o-mini").strip(),
+    }
+    return _openai_document_interpret_with_provider(
+        provider=provider,
+        file_name=file_name,
+        mime_type=mime_type,
+        document_bytes=document_bytes,
+        extracted_text=extracted_text,
+        category=category,
+        user_question=user_question,
+    )
+
+
+def _anthropic_document_interpret(
+    *,
+    provider: dict[str, Any],
+    file_name: str,
+    mime_type: str,
+    document_bytes: bytes,
+    extracted_text: str,
+    category: str,
+    user_question: str | None,
+) -> dict[str, Any]:
+    api_key = str(provider.get("api_key") or "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Anthropic API key is not configured.")
+    model = str(provider.get("model") or "claude-3-5-sonnet-latest").strip()
+    base_url = str(provider.get("base_url") or _ANTHROPIC_API_BASE).rstrip("/")
+    prompt_lines = _document_prompt_lines(
+        file_name=file_name,
+        category=category,
+        extracted_text=extracted_text,
+        user_question=user_question,
+    )
+
+    user_content: list[dict[str, Any]] = [{"type": "text", "text": "\n".join(prompt_lines)}]
+    if mime_type.startswith("image/"):
+        user_content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": mime_type,
+                    "data": base64.b64encode(document_bytes).decode("ascii"),
+                },
+            }
+        )
+
+    payload = {
+        "model": model,
+        "max_tokens": 1200,
+        "temperature": 0.1,
+        "system": (
+            "Provide a safe, non-diagnostic medical document summary in strict JSON. "
+            "Audience is a patient/caregiver (not a clinician)."
+        ),
+        "messages": [{"role": "user", "content": user_content}],
+    }
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": os.getenv("ANTHROPIC_API_VERSION", "2023-06-01"),
+        "Content-Type": "application/json",
+    }
+
+    try:
+        with httpx.Client(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
+            response = client.post(f"{base_url}/messages", headers=headers, json=payload)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Document interpretation provider timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Failed to reach document interpretation provider.") from exc
+
+    if response.status_code >= 400:
+        provider_error = _provider_error_message(response)
+        if response.status_code == 401:
+            raise HTTPException(status_code=503, detail="Anthropic API key was rejected by provider.")
+        if response.status_code == 429:
+            raise HTTPException(status_code=429, detail="Document interpretation provider is rate-limited.")
+        raise HTTPException(status_code=502, detail=f"Document interpretation failed: {provider_error}")
+
+    try:
+        completion_payload = response.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="Document interpretation provider returned invalid JSON.") from exc
+
+    content_text = _coerce_anthropic_text(completion_payload)
+    parsed = _extract_json_object(content_text)
+    if parsed is None:
+        raise HTTPException(status_code=502, detail="Document interpretation provider returned non-JSON output.")
+    return parsed
+
+
+def _document_interpret(
+    *,
+    file_name: str,
+    mime_type: str,
+    document_bytes: bytes,
+    extracted_text: str,
+    category: str,
+    user_question: str | None,
+) -> tuple[dict[str, Any], str]:
+    providers = _document_provider_candidates()
+    if not providers:
+        raise HTTPException(
+            status_code=503,
+            detail="No document interpretation provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+        )
+    last_error: HTTPException | None = None
+    for provider in providers:
+        provider_name = str(provider.get("provider") or "unknown")
+        try:
+            if provider_name == "anthropic":
+                result = _anthropic_document_interpret(
+                    provider=provider,
+                    file_name=file_name,
+                    mime_type=mime_type,
+                    document_bytes=document_bytes,
+                    extracted_text=extracted_text,
+                    category=category,
+                    user_question=user_question,
+                )
+            else:
+                result = _openai_document_interpret_with_provider(
+                    provider=provider,
+                    file_name=file_name,
+                    mime_type=mime_type,
+                    document_bytes=document_bytes,
+                    extracted_text=extracted_text,
+                    category=category,
+                    user_question=user_question,
+                )
+            return result, provider_name
+        except HTTPException as exc:
+            print(f"document interpretation failed ({provider_name}): {exc.detail}")  # noqa: T201
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise last_error
+    raise HTTPException(status_code=503, detail="No usable document interpretation provider available.")
 
 
 def _build_document_findings(
@@ -2734,9 +3042,10 @@ async def documents_analyze(
         raise HTTPException(status_code=422, detail="Unable to extract readable content from the uploaded file.")
 
     llm_used = True
+    llm_provider: str | None = None
     llm_error: str | None = None
     try:
-        interpretation = _openai_document_interpret(
+        interpretation, llm_provider = _document_interpret(
             file_name=file_name,
             mime_type=mime_type,
             document_bytes=document_bytes,
@@ -2745,21 +3054,6 @@ async def documents_analyze(
             user_question=question,
         )
     except HTTPException as exc:
-        if exc.status_code == 503:
-            container.memory.clinical.store_document_analysis(
-                document_id=document_id,
-                user_id=user_id,
-                session_key=ctx.session_key,
-                processing_status="failed",
-                extraction_confidence=extraction_confidence,
-                summary={
-                    "analysis_type": "document_summary",
-                    "error": str(exc.detail),
-                    "extraction_method": extraction_method,
-                },
-                findings=[],
-            )
-            raise
         llm_used = False
         llm_error = str(exc.detail)
         interpretation = _fallback_document_interpretation(extracted_text, question)
@@ -2782,7 +3076,7 @@ async def documents_analyze(
         key_findings=safe_result["key_findings"],
         extraction_confidence=effective_confidence,
         extraction_method=extraction_method,
-        source_label="openai_document_interpret" if llm_used else "fallback_summary",
+        source_label=f"{llm_provider}_document_interpret" if llm_used and llm_provider else "fallback_summary",
     )
     for marker in safe_result["high_risk_flags"]:
         findings.append(
@@ -2802,6 +3096,7 @@ async def documents_analyze(
         "analysis_type": "document_summary",
         "file_category": category,
         "llm_used": llm_used,
+        "llm_provider": llm_provider if llm_used else None,
         "llm_error": llm_error,
         "extraction_method": extraction_method,
         "extraction_confidence": round(effective_confidence, 3),
@@ -2833,6 +3128,8 @@ async def documents_analyze(
             "method": extraction_method,
             "confidence": round(effective_confidence, 3),
             "llm_used": llm_used,
+            "llm_provider": llm_provider if llm_used else None,
+            "llm_error": llm_error,
         },
     }
 

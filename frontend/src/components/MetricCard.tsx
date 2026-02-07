@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { LineChart, Line, ResponsiveContainer } from "recharts";
+import { LineChart, Line } from "recharts";
 import { cn } from "@/lib/utils";
 import type { HealthSignal } from "@/lib/types";
 
@@ -21,6 +22,35 @@ export function MetricCard({
 }) {
   const TrendIcon = signal.trend ? trendIcons[signal.trend] : null;
   const chartData = signal.data?.map((v, i) => ({ i, v }));
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const node = chartContainerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const updateSize = () => {
+      const rect = node.getBoundingClientRect();
+      setChartSize({
+        width: Math.max(0, Math.floor(rect.width)),
+        height: Math.max(0, Math.floor(rect.height)),
+      });
+    };
+    updateSize();
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect;
+      if (!next) {
+        return;
+      }
+      setChartSize({
+        width: Math.max(0, Math.floor(next.width)),
+        height: Math.max(0, Math.floor(next.height)),
+      });
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <motion.div
@@ -51,9 +81,9 @@ export function MetricCard({
       </div>
 
       {chartData && chartData.length > 1 && (
-        <div className="h-10" aria-hidden="true">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
+        <div className="h-10 w-full" ref={chartContainerRef} aria-hidden="true">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <LineChart width={chartSize.width} height={chartSize.height} data={chartData}>
               <Line
                 type="monotone"
                 dataKey="v"
@@ -62,7 +92,7 @@ export function MetricCard({
                 dot={false}
               />
             </LineChart>
-          </ResponsiveContainer>
+          )}
         </div>
       )}
 

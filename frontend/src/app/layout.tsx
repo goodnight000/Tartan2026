@@ -66,7 +66,7 @@ export default function RootLayout({
             </main>
             <footer className="app-footer" role="contentinfo">
               <p>
-                CarePilot is not a substitute for professional medical advice. In an emergency, call 911.{" "}
+                CarePilot is not a substitute for professional medical advice.{" "}
                 <Link href="/profile">Privacy & Data Controls</Link>
               </p>
             </footer>

@@ -61,6 +61,9 @@ export type DocumentUploadResult = {
   fileName: string;
   summary: string;
   followUpQuestions: string[];
+  llmUsed?: boolean;
+  llmProvider?: string;
+  llmError?: string;
   messageForChat: string;
 };
 
@@ -78,15 +81,27 @@ export function DocumentUploadFlow({
   const [fileName, setFileName] = useState("");
   const [summary, setSummary] = useState("");
   const [questions, setQuestions] = useState<string[]>([]);
+  const [llmInfo, setLlmInfo] = useState<{ used?: boolean; provider?: string; error?: string }>({});
   const [errorText, setErrorText] = useState("");
   const { user } = useAuthUser();
 
   const formatResultForChat = useCallback(
-    (type: string, name: string, resultSummary: string, followUpQuestions: string[]) => {
+    (
+      type: string,
+      name: string,
+      resultSummary: string,
+      followUpQuestions: string[],
+      llmUsed?: boolean,
+      llmError?: string
+    ) => {
       const questionLines =
         followUpQuestions.length > 0
           ? followUpQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
           : "No specific follow-up questions were identified.";
+      const fallbackLine =
+        llmUsed === false
+          ? `\n**Note:** AI interpretation was unavailable, so this used local extraction fallback.${llmError ? ` (${llmError})` : ""}`
+          : "";
       return [
         `I analyzed your ${type.toLowerCase()} file **${name}**.`,
         "",
@@ -94,6 +109,7 @@ export function DocumentUploadFlow({
         "",
         "**Suggested clinician follow-up questions:**",
         questionLines,
+        fallbackLine,
         "",
         "_This interpretation is informational only and not a diagnosis._",
       ].join("\n");
@@ -119,6 +135,7 @@ export function DocumentUploadFlow({
       setErrorText("");
       setSummary("");
       setQuestions([]);
+      setLlmInfo({});
 
       try {
         const idToken = await getIdTokenMaybe(user);
@@ -146,6 +163,9 @@ export function DocumentUploadFlow({
           plain_language_summary?: string;
           follow_up_questions?: string[];
           suggested_questions?: string[];
+          llm_used?: boolean;
+          llm_provider?: string;
+          llm_error?: string;
         };
 
         const normalizedSummary =
@@ -157,9 +177,13 @@ export function DocumentUploadFlow({
           data.suggested_questions ||
           []
         ).filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+        const llmUsed = typeof data.llm_used === "boolean" ? data.llm_used : undefined;
+        const llmProvider = typeof data.llm_provider === "string" ? data.llm_provider : undefined;
+        const llmError = typeof data.llm_error === "string" ? data.llm_error : undefined;
 
         setSummary(normalizedSummary);
         setQuestions(normalizedQuestions);
+        setLlmInfo({ used: llmUsed, provider: llmProvider, error: llmError });
         setStep("done");
 
         onComplete({
@@ -167,7 +191,17 @@ export function DocumentUploadFlow({
           fileName: file.name,
           summary: normalizedSummary,
           followUpQuestions: normalizedQuestions,
-          messageForChat: formatResultForChat(docType.label, file.name, normalizedSummary, normalizedQuestions),
+          llmUsed,
+          llmProvider,
+          llmError,
+          messageForChat: formatResultForChat(
+            docType.label,
+            file.name,
+            normalizedSummary,
+            normalizedQuestions,
+            llmUsed,
+            llmError
+          ),
         });
       } catch (error) {
         const message =
@@ -270,6 +304,12 @@ export function DocumentUploadFlow({
             <span className="text-sm text-[color:var(--cp-text)]">{fileName} analyzed</span>
           </div>
           <p className="text-sm text-[color:var(--cp-text)]">{summary}</p>
+          {llmInfo.used === false && (
+            <div className="rounded-xl border border-[color:var(--cp-danger)]/35 bg-[color:color-mix(in_srgb,var(--cp-danger)_8%,white_92%)] p-2 text-xs text-[color:var(--cp-danger)]">
+              AI interpretation was unavailable, so this result used local extraction fallback.
+              {llmInfo.error ? ` ${llmInfo.error}` : ""}
+            </div>
+          )}
           <div className="rounded-xl border border-[color:var(--cp-line)] bg-white/80 p-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]">
               Suggested Follow-Up Questions
@@ -302,6 +342,7 @@ export function DocumentUploadFlow({
               setFileName("");
               setSummary("");
               setQuestions([]);
+              setLlmInfo({});
               setErrorText("");
             }}
           >

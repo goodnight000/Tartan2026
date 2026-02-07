@@ -17,9 +17,9 @@ def test_documents_analysis_is_strictly_user_and_session_scoped(client, auth_hea
             "safety_guidance": "",
             "urgency_level": "routine",
             "high_risk_flags": [],
-        }
+        }, "anthropic"
 
-    monkeypatch.setattr(backend_module, "_openai_document_interpret", fake_interpret)
+    monkeypatch.setattr(backend_module, "_document_interpret", fake_interpret)
 
     response_a1 = client.post(
         "/documents/analyze",

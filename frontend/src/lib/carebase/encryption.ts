@@ -68,15 +68,15 @@ export async function encryptValue(
   const nonce = getRandomBytes(NONCE_LENGTH);
   const key = await crypto.subtle.importKey(
     'raw',
-    encryptionKey,
+    toArrayBuffer(encryptionKey),
     { name: 'AES-GCM' },
     false,
     ['encrypt']
   );
   const ciphertextWithTag = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: nonce, tagLength: TAG_LENGTH * 8 },
+    { name: 'AES-GCM', iv: toArrayBuffer(nonce), tagLength: TAG_LENGTH * 8 },
     key,
-    plaintextBytes
+    toArrayBuffer(plaintextBytes)
   );
   return concatBytes(nonce, new Uint8Array(ciphertextWithTag));
 }
@@ -97,7 +97,7 @@ export async function decryptValue(
 
   const key = await crypto.subtle.importKey(
     'raw',
-    encryptionKey,
+    toArrayBuffer(encryptionKey),
     { name: 'AES-GCM' },
     false,
     ['decrypt']
@@ -105,9 +105,9 @@ export async function decryptValue(
 
   try {
     const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: nonce, tagLength: TAG_LENGTH * 8 },
+      { name: 'AES-GCM', iv: toArrayBuffer(nonce), tagLength: TAG_LENGTH * 8 },
       key,
-      payload
+      toArrayBuffer(payload)
     );
     return bytesToUtf8(new Uint8Array(plaintext));
   } catch (error) {
@@ -141,6 +141,10 @@ function concatBytes(...chunks: Uint8Array[]): Uint8Array {
     offset += chunk.length;
   });
   return result;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return Uint8Array.from(bytes).buffer;
 }
 
 function toBase64(bytes: Uint8Array): string {

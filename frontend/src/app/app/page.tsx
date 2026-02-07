@@ -362,18 +362,18 @@ export default function AppPage() {
           <TriageCard
             level={triageLevel}
             summary={
-              triageLevel === "EMERGENT"
-                ? "An emergency condition may have been detected. Please seek immediate medical attention."
-                : triageLevel === "URGENT_24H"
+              triageLevel === "ROUTINE"
+                ? "Your current health status appears routine. Continue your care plan as scheduled."
+                : triageLevel === "URGENT_24H" || triageLevel === "EMERGENT"
                   ? "Your symptoms may need attention within 24 hours. Consider scheduling an appointment."
-                  : "Your current health status appears routine. Continue your care plan as scheduled."
+                  : "Consider scheduling an appointment based on your current symptoms."
             }
             actions={
-              triageLevel === "EMERGENT"
-                ? ["Call 911 immediately", "Go to nearest emergency room", "Do not drive yourself"]
-                : triageLevel === "URGENT_24H"
+              triageLevel === "ROUTINE"
+                ? ["Continue medications as prescribed", "Log any changes in symptoms"]
+                : triageLevel === "URGENT_24H" || triageLevel === "EMERGENT"
                   ? ["Schedule an appointment today", "Monitor symptoms closely"]
-                  : ["Continue medications as prescribed", "Log any changes in symptoms"]
+                  : ["Monitor symptoms closely"]
             }
           />
         )}
