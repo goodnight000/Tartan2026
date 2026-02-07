@@ -45,13 +45,11 @@ export function TriageCard({
           <Button
             variant="danger"
             size="sm"
-            asChild
             className="shrink-0"
+            type="button"
           >
-            <a href="tel:911" aria-label="Call 911">
-              <Phone className="h-3.5 w-3.5" aria-hidden="true" />
-              Call 911
-            </a>
+            <Phone className="h-3.5 w-3.5" aria-hidden="true" />
+            Call 911
           </Button>
         )}
       </div>

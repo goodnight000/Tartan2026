@@ -418,7 +418,7 @@ export function ChatPanel() {
         {/* Messages */}
         <div
           ref={chatContainerRef}
-          className="max-h-[56vh] space-y-3 overflow-y-auto rounded-2xl border border-[color:var(--cp-line)] bg-[color:var(--cp-surface)]/70 p-3"
+          className="min-h-[46vh] max-h-[68vh] space-y-3 overflow-y-auto rounded-2xl border border-[color:var(--cp-line)] bg-[color:var(--cp-surface)]/70 p-3"
           aria-live="polite"
           role="log"
           aria-label="Chat messages"
@@ -513,7 +513,7 @@ export function ChatPanel() {
               }
             }}
             rows={1}
-            className="flex-1 resize-none rounded-2xl border border-[color:var(--cp-line)] bg-white/75 px-4 py-2.5 text-sm text-[color:var(--cp-text)] placeholder:text-[color:var(--cp-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--cp-primary)] focus-visible:ring-offset-2"
+            className="chat-input flex-1 resize-none rounded-2xl border border-[color:var(--cp-line)] bg-white/75 px-4 py-2.5 text-sm text-[color:var(--cp-text)] placeholder:text-[color:var(--cp-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--cp-primary)] focus-visible:ring-offset-2"
             aria-label="Chat message input"
           />
           <Button

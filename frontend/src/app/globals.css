@@ -118,6 +118,28 @@ pre,
   overflow: hidden;
 }
 
+/* ── Chat input scrollbar ── */
+.chat-input {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(28, 35, 43, 0.35) transparent;
+}
+
+.chat-input::-webkit-scrollbar {
+  width: 10px;
+}
+
+.chat-input::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.chat-input::-webkit-scrollbar-thumb {
+  background: rgba(28, 35, 43, 0.35);
+  border-radius: 999px;
+  background-clip: padding-box;
+  border: 3px solid transparent;
+}
+
 .atmosphere {
   pointer-events: none;
   position: fixed;
