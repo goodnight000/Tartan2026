@@ -98,3 +98,7 @@ ANTHROPIC_MODEL=claude-sonnet-4-5
 GOOGLE_PLACES_API_KEY=your_google_places_key
 CAREBASE_ONLY=true
 ```
+
+## Legal
+
+- End User License Agreement: `EULA.txt`
