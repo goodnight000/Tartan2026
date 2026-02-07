@@ -1,4 +1,5 @@
 import "./globals.css";
+import "firebaseui/dist/firebaseui.css";
 import type { Metadata } from "next";
 import { Providers } from "@/app/providers";
 

@@ -11,10 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { TagInput } from "@/components/TagInput";
-import { authorizedFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { useEffect } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { auth } from "@/lib/firebase";
+import { upsertProfile } from "@/lib/firestore";
 
 const medSchema = z.object({
   name: z.string().optional(),
@@ -44,17 +44,17 @@ export default function OnboardingPage() {
   const { push } = useToast();
   const [step, setStep] = useState(0);
   const [ready, setReady] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const ensureAuth = async () => {
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
-      if (!session) {
+      const user = auth.currentUser;
+      if (!user) {
         push({ title: "Please log in first" });
         router.push("/login");
         return;
       }
+      setUserId(user.uid);
       setReady(true);
     };
     ensureAuth();
@@ -81,23 +81,17 @@ export default function OnboardingPage() {
   });
 
   const onSubmit = async (values: FormValues) => {
+    if (!userId) {
+      push({ title: "Please log in first" });
+      router.push("/login");
+      return;
+    }
     const cleaned = {
       ...values,
       meds: values.meds.filter((med) => med.name?.trim())
     };
     try {
-      const response = await authorizedFetch("/profile", {
-        method: "POST",
-        body: JSON.stringify(cleaned)
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        push({
-          title: "Profile save failed",
-          description: errorText || "Server error"
-        });
-        return;
-      }
+      await upsertProfile(userId, cleaned);
       push({ title: "Profile saved" });
       router.push("/app");
     } catch (error) {

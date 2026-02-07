@@ -10,14 +10,14 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ChatPanel } from "@/components/ChatPanel";
-import { authorizedFetch } from "@/lib/api";
 import { consumeSSE } from "@/lib/sse";
 import { useChatStore } from "@/store/chat";
 import { useToast } from "@/components/ui/toast";
 import type { Reminder } from "@/lib/types";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { auth } from "@/lib/firebase";
+import { addSymptomLog, getProfile } from "@/lib/firestore";
 
 const symptomSchema = z.object({
   symptom_text: z.string().min(2),
@@ -40,10 +40,7 @@ export default function AppPage() {
 
   useEffect(() => {
     const ensureAuth = async () => {
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
-      if (!session) {
+      if (!auth.currentUser) {
         router.push("/login");
       }
     };
@@ -53,9 +50,28 @@ export default function AppPage() {
   const remindersQuery = useQuery({
     queryKey: ["reminders"],
     queryFn: async () => {
-      const response = await authorizedFetch("/reminders");
-      if (!response.ok) throw new Error("Failed to load reminders");
-      return (await response.json()) as { refill_reminders: Reminder[] };
+      const user = auth.currentUser;
+      if (!user) throw new Error("Not authenticated");
+      const profile = await getProfile(user.uid);
+      const meds = profile?.meds ?? [];
+      const reminders: Reminder[] = [];
+      const today = new Date();
+      for (const med of meds) {
+        if (!med.last_fill_date || !med.refill_days) continue;
+        const due = new Date(med.last_fill_date);
+        due.setDate(due.getDate() + Number(med.refill_days));
+        const daysLeft = Math.ceil(
+          (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        if (daysLeft <= 7) {
+          reminders.push({
+            med_name: med.name,
+            days_left: daysLeft,
+            recommended_action: "Refill soon"
+          });
+        }
+      }
+      return { refill_reminders: reminders };
     }
   });
 
@@ -63,8 +79,8 @@ export default function AppPage() {
     queryKey: ["health-plan", remindersQuery.data],
     enabled: Boolean(remindersQuery.data),
     queryFn: async () => {
-      const profileRes = await authorizedFetch("/profile");
-      const profile = profileRes.ok ? await profileRes.json() : {};
+      const user = auth.currentUser;
+      const profile = user ? await getProfile(user.uid) : {};
       const response = await fetch("/api/plan/reminder", {
         method: "POST",
         body: JSON.stringify({
@@ -125,16 +141,14 @@ export default function AppPage() {
   const onSubmit = async (values: SymptomValues) => {
     setPending(true);
     try {
-      const response = await authorizedFetch("/symptoms", {
-        method: "POST",
-        body: JSON.stringify(values)
+      const user = auth.currentUser;
+      if (!user) throw new Error("Not authenticated");
+      await addSymptomLog(user.uid, {
+        symptom_text: values.symptom_text,
+        severity: values.severity,
+        onset_time: values.onset_time,
+        notes: values.notes
       });
-      if (!response.ok) {
-        appendMessage({ role: "user", content: values.symptom_text });
-        await sendToChat(values.symptom_text);
-        push({ title: "Logged via chat" });
-        return;
-      }
       push({ title: "Symptom logged" });
       form.reset({ severity: 5, symptom_text: "", notes: "" });
     } catch (error) {

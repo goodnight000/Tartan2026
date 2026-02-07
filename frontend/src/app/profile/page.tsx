@@ -3,21 +3,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { authorizedFetch } from "@/lib/api";
-import type { ActionLog, MedicalProfile, SymptomLog } from "@/lib/types";
+import type { MedicalProfile, SymptomLog } from "@/lib/types";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { auth } from "@/lib/firebase";
+import { getActionLogs, getProfile, getSymptomLogs } from "@/lib/firestore";
 
 export default function ProfilePage() {
   const router = useRouter();
 
   useEffect(() => {
     const ensureAuth = async () => {
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
-      if (!session) {
+      if (!auth.currentUser) {
         router.push("/login");
       }
     };
@@ -26,31 +23,34 @@ export default function ProfilePage() {
   const profileQuery = useQuery({
     queryKey: ["profile"],
     queryFn: async () => {
-      const response = await authorizedFetch("/profile");
-      if (response.status === 401) {
+      const user = auth.currentUser;
+      if (!user) {
         router.push("/login");
         throw new Error("Not authenticated");
       }
-      if (!response.ok) throw new Error("Failed to load profile");
-      return (await response.json()) as MedicalProfile;
+      const profile = await getProfile(user.uid);
+      if (!profile) throw new Error("No profile found");
+      return profile;
     }
   });
 
   const symptomsQuery = useQuery({
     queryKey: ["symptom-logs"],
     queryFn: async () => {
-      const response = await authorizedFetch("/logs/symptoms?limit=20");
-      if (!response.ok) return { items: [] as SymptomLog[] };
-      return (await response.json()) as { items: SymptomLog[] };
+      const user = auth.currentUser;
+      if (!user) return { items: [] as SymptomLog[] };
+      const items = await getSymptomLogs(user.uid, 20);
+      return { items };
     }
   });
 
   const actionsQuery = useQuery({
     queryKey: ["action-logs"],
     queryFn: async () => {
-      const response = await authorizedFetch("/logs/actions?limit=20");
-      if (!response.ok) return { items: [] as ActionLog[] };
-      return (await response.json()) as { items: ActionLog[] };
+      const user = auth.currentUser;
+      if (!user) return { items: [] as ActionLog[] };
+      const items = await getActionLogs(user.uid, 20);
+      return { items };
     }
   });
 

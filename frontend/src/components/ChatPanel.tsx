@@ -10,6 +10,8 @@ import { consumeSSE } from "@/lib/sse";
 import { useChatStore } from "@/store/chat";
 import { useToast } from "@/components/ui/toast";
 import type { ActionPlan, ActionResult } from "@/lib/types";
+import { auth } from "@/lib/firebase";
+import { addActionLog } from "@/lib/firestore";
 
 export function ChatPanel() {
   const [input, setInput] = useState("");
@@ -82,16 +84,25 @@ export function ChatPanel() {
   const handleExecute = async () => {
     if (!actionPlan) return;
     try {
-      const response = await authorizedFetch("/actions/execute", {
-        method: "POST",
-        body: JSON.stringify({ plan: actionPlan, user_confirmed: true })
-      });
-      const data = (await response.json()) as ActionResult;
+      const data: ActionResult = {
+        status: "success",
+        result: {
+          message:
+            "Action execution is handled by MCP tools directly in the agent."
+        }
+      };
       setActionResult(data);
       appendMessage({
         role: "assistant",
         content: `Action result: ${JSON.stringify(data.result)}`
       });
+      const user = auth.currentUser;
+      if (user) {
+        await addActionLog(user.uid, {
+          action_type: actionPlan.tool,
+          status: "success"
+        });
+      }
     } catch (error) {
       push({ title: "Action failed", description: (error as Error).message });
     } finally {

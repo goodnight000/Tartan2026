@@ -25,6 +25,8 @@ export type SymptomLog = {
   created_at: string;
   symptom_text: string;
   severity: number;
+  onset_time?: string;
+  notes?: string;
 };
 
 export type ActionLog = {

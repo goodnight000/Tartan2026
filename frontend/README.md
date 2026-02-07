@@ -13,14 +13,17 @@ npm install
 2. Create `.env.local`
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 OPENROUTER_API_KEY=your_openrouter_key
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=openai/gpt-4o-mini
 DEDALUS_API_KEY=your_dedalus_key
 DEDALUS_MODEL=anthropic/claude-opus-4-5
+NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_firebase_project_id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_firebase_sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=your_firebase_app_id
 DEDALUS_MCP_SERVERS=http://localhost:3000/mcp
 ```
 
@@ -40,9 +43,7 @@ uv sync
 uv run uvicorn main:app --reload --port 8000
 ```
 
-确保 `.env.local` 里 `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`。
-如果没有 Supabase 登录，也可以在启动后端前设置：
-`ALLOW_ANON=true`（允许匿名请求）。
+后端仅在你需要工具/数据服务时启动。
 
 后端可选环境变量：
 - `OPENROUTER_API_KEY=...`
@@ -56,6 +57,9 @@ uv run uvicorn main:app --reload --port 8000
 - `DEDALUS_API_KEY`
 - `DEDALUS_MODEL`（可选）
 - `DEDALUS_MCP_SERVERS`（可选，逗号分隔）
+
+前端使用 Firebase Auth + Firestore：
+- `NEXT_PUBLIC_FIREBASE_*` 系列变量
 
 ## MCP Google Maps（可选）
 
@@ -73,12 +77,11 @@ DEDALUS_MCP_SERVERS=http://localhost:3000/mcp
 
 ## Pages
 
-- `/login` Email + password auth (Supabase)
+- `/login` Email + password auth (Firebase UI)
 - `/onboarding` Medical profile wizard
 - `/app` Dashboard + chat panel
 - `/profile` Profile + recent logs
 
 ## Notes
 
-- All backend requests attach `Authorization: Bearer <access_token>`.
-- Chat uses SSE from `POST /chat/stream`.
+- Chat uses SSE from `/api/chat/stream`.
