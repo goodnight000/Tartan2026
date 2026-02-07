@@ -265,7 +265,6 @@ export default function ProfilePage() {
           eyebrow="Trust Center"
           title="Profile, Permissions, and Receipts"
           subtitle="Inspect the exact data used in care decisions, review action history, and control your privacy posture."
-          chips={<span className="status-chip status-chip--info">Consent Records Enabled</span>}
         />
         <TrustBadge variant="block" />
         <div className="flex flex-wrap items-center gap-3">

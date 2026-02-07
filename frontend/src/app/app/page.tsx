@@ -260,14 +260,6 @@ export default function AppPage() {
           eyebrow="Command Center"
           title={`${greeting.text}`}
           subtitle={topPriority}
-          chips={
-            <>
-              <span className="status-chip status-chip--danger">Triage Live</span>
-              <span className="status-chip status-chip--info">Actions Consent-Gated</span>
-              <span className="status-chip status-chip--warning">Proactive {proactiveStatus}</span>
-              {isQuietHours && <span className="status-chip status-chip--info">Quiet Hours</span>}
-            </>
-          }
         />
         {triageLevel && (
           <TriageCard
@@ -288,28 +280,6 @@ export default function AppPage() {
             }
           />
         )}
-        <div className="grid gap-3 md:grid-cols-3">
-          <Button variant={paused ? "outline" : "default"} onClick={() => setPaused((prev) => !prev)}>
-            {paused ? "Resume Proactive" : "Pause Proactive"}
-          </Button>
-          <Button variant={medOnly ? "default" : "outline"} onClick={() => setMedOnly((prev) => !prev)}>
-            {medOnly ? "Medication-Only Active" : "Enable Medication-Only"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              const until = new Date();
-              until.setDate(until.getDate() + 3);
-              setSnoozedUntil(until);
-              push({ title: "Snoozed", description: "Proactive nudges snoozed for 3 days.", variant: "info" });
-            }}
-          >
-            Snooze 3 Days
-          </Button>
-        </div>
-        <p className="text-xs text-[color:var(--cp-muted)]">
-          Proactive reminder controls are mostly UI state and are not fully enforced by the backend.
-        </p>
       </Card>
 
       {/* 3-column layout */}
