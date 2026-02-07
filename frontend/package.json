@@ -23,13 +23,16 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
+    "@opentelemetry/api": "^1.9.0",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-tabs": "^1.1.1",
     "@radix-ui/react-toast": "^1.2.2",
     "@tanstack/react-query": "^5.51.23",
     "clsx": "^2.1.1",
+    "dedalus-labs": "0.1.0-alpha.8",
     "firebase": "^10.12.5",
+    "firebase-admin": "^12.3.0",
     "firebaseui": "^6.1.0",
     "next": "14.2.5",
     "react": "^18.3.1",
@@ -39,8 +42,7 @@
     "remark-gfm": "^4.0.0",
     "tailwind-merge": "^2.5.2",
     "zod": "^3.23.8",
-    "zustand": "^4.5.4",
-    "dedalus-labs": "0.1.0-alpha.8"
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "^22.5.4",

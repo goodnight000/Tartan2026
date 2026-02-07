@@ -13,7 +13,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { consumeSSE } from "@/lib/sse";
 import { useChatStore } from "@/store/chat";
 import { useToast } from "@/components/ui/toast";
-import type { Reminder } from "@/lib/types";
+import type { ActionPlan, Reminder } from "@/lib/types";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { addSymptomLog, getProfile } from "@/lib/firestore";
@@ -63,7 +63,7 @@ export default function AppPage() {
         );
         if (daysLeft <= 7) {
           reminders.push({
-            med_name: med.name,
+            med_name: med.name ?? "Unknown",
             days_left: daysLeft,
             recommended_action: "Refill soon"
           });
@@ -124,12 +124,7 @@ export default function AppPage() {
       }
       if (event.event === "action_plan") {
         setActionPlan(
-          event.data as {
-            tier: 1 | 2;
-            tool: string;
-            params: object;
-            consent_prompt?: string;
-          }
+          event.data as ActionPlan
         );
       }
     });

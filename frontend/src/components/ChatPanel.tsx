@@ -13,6 +13,26 @@ import type { ActionPlan, ActionResult } from "@/lib/types";
 import { auth } from "@/lib/firebase";
 import { addActionLog } from "@/lib/firestore";
 
+function formatActionResult(tool: string, data: ActionResult): string {
+  if (data.status === "failure") {
+    return `The action failed: ${data.result?.message ?? "Unknown error"}`;
+  }
+  const r = data.result;
+  if (r?.confirmation_id) {
+    return `Booking confirmed! Confirmation ID: **${r.confirmation_id}**. ${r.summary ?? ""}`;
+  }
+  if (Array.isArray(r?.items)) {
+    const items = r.items as Array<Record<string, unknown>>;
+    if (items.length === 0) return `No results found for ${tool}.`;
+    const lines = items.map(
+      (it, i) =>
+        `${i + 1}. **${it.name ?? "Unknown"}** — ${it.address ?? "No address"}`
+    );
+    return `Found ${items.length} result(s):\n\n${lines.join("\n")}`;
+  }
+  return `Action completed: ${JSON.stringify(r)}`;
+}
+
 export function ChatPanel() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
@@ -33,14 +53,27 @@ export function ChatPanel() {
     appendMessage({ role: "user", content });
     setPending(true);
     try {
+      // Get Firebase ID token for server-side auth
+      let idToken: string | undefined;
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          idToken = await user.getIdToken();
+        } catch {
+          // Continue without token
+        }
+      }
+
       const response = await fetch("/api/chat/stream", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: content,
           history: messages.map((msg) => ({
             role: msg.role,
             content: msg.content
-          }))
+          })),
+          idToken
         })
       });
 
@@ -84,23 +117,23 @@ export function ChatPanel() {
   const handleExecute = async () => {
     if (!actionPlan) return;
     try {
-      const data: ActionResult = {
-        status: "success",
-        result: {
-          message:
-            "Action execution is handled by MCP tools directly in the agent."
-        }
-      };
-      setActionResult(data);
-      appendMessage({
-        role: "assistant",
-        content: `Action result: ${JSON.stringify(data.result)}`
+      const res = await fetch("/api/actions/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: actionPlan,
+          user_confirmed: true
+        })
       });
+      const data: ActionResult = await res.json();
+      setActionResult(data);
+      const resultText = formatActionResult(actionPlan.tool, data);
+      appendMessage({ role: "assistant", content: resultText });
       const user = auth.currentUser;
       if (user) {
         await addActionLog(user.uid, {
           action_type: actionPlan.tool,
-          status: "success"
+          status: data.status
         });
       }
     } catch (error) {

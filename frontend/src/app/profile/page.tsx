@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { MedicalProfile, SymptomLog } from "@/lib/types";
+import type { ActionLog, MedicalProfile, SymptomLog } from "@/lib/types";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getActionLogs, getProfile, getSymptomLogs } from "@/lib/firestore";

@@ -1,6 +1,6 @@
 export type MedItem = {
-  name: string;
-  dose: string;
+  name?: string;
+  dose?: string;
   frequency_per_day: number;
   start_date?: string;
   last_fill_date?: string;
@@ -12,7 +12,7 @@ export type MedicalProfile = {
   conditions: string[];
   allergies: string[];
   meds: MedItem[];
-  family_history: string;
+  family_history?: string;
   preferences: {
     radius_miles: number;
     open_now: boolean;
