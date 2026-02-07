@@ -1,0 +1,58 @@
+{
+  "name": "medclaw-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hackathon-ready Next.js frontend for MedClaw.",
+  "homepage": "https://github.com/goodnight000/Tartan2026#readme",
+  "bugs": {
+    "url": "https://github.com/goodnight000/Tartan2026/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goodnight000/Tartan2026.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "postcss.config.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.9.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@radix-ui/react-dialog": "^1.1.2",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-tabs": "^1.1.1",
+    "@radix-ui/react-toast": "^1.2.2",
+    "@tanstack/react-query": "^5.51.23",
+    "clsx": "^2.1.1",
+    "firebase": "^10.12.5",
+    "firebase-admin": "^12.3.0",
+    "firebaseui": "^6.1.0",
+    "framer-motion": "^12.33.0",
+    "lucide-react": "^0.563.0",
+    "next": "14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.53.0",
+    "react-markdown": "^9.0.1",
+    "recharts": "^3.7.0",
+    "remark-gfm": "^4.0.0",
+    "tailwind-merge": "^2.5.2",
+    "zod": "^3.23.8",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.4",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.6.3"
+  }
+}
