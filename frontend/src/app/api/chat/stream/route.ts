@@ -27,9 +27,21 @@ export async function POST(req: NextRequest) {
     .map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`)
     .join("\n");
 
+  const mcpServers = (process.env.DEDALUS_MCP_SERVERS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const response = await runner.run({
-    input: `Use the following conversation history to respond.\n\n${transcript}`,
-    model: process.env.DEDALUS_MODEL || "anthropic/claude-opus-4-5"
+    input:
+      "You are MedClaw, a careful medical assistant.\n" +
+      "When the user asks for nearby places (pharmacies, clinics, labs, specialists, or addresses), " +
+      "you MUST call the MCP Google Maps tools to search and return real results. " +
+      "Ask for missing location details (city, radius) before calling tools.\n" +
+      "Be concise and ask clarifying questions when necessary.\n\n" +
+      `Conversation:\n${transcript}`,
+    model: process.env.DEDALUS_MODEL || "anthropic/claude-opus-4-5",
+    mcp_servers: mcpServers.length ? mcpServers : undefined
   });
 
   const finalText = response.finalOutput || "";
