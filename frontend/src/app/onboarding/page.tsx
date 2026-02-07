@@ -917,32 +917,50 @@ export default function OnboardingPage() {
       setCompletedSteps((prev) => [...prev, step.id]);
     }
 
-    setStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
-  };
+    setSaving(true);
+    const cleaned = {
+      ...values,
+      meds: values.meds.filter((med) => med.name?.trim()),
+    };
+    const timezone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
-  const handleContinue = async () => {
-    const values = form.getValues();
-    if (step.id === "consent_transparency" && !values.consent.health_data_use) {
-      form.setError("consent.health_data_use", {
-        type: "manual",
-        message: "You must accept to continue. You can delete your data anytime in Profile.",
+    try {
+      await upsertProfile(user.uid, cleaned);
+
+      let idToken: string;
+      try {
+        idToken = await user.getIdToken();
+      } catch {
+        throw new Error(
+          "Profile saved locally, but backend sync could not verify your session. Please log in again."
+        );
+      }
+
+      const syncResponse = await fetch("/api/profile/upsert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...cleaned,
+          timezone,
+          idToken,
+        }),
       });
-      return;
-    }
-    if (step.id === "profile_mode" && !values.profile_mode.managing_for) {
-      form.setError("profile_mode.managing_for", {
-        type: "manual",
-        message: "Please select who this profile is for.",
-      });
-      return;
-    }
-    if (step.id === "care_logistics") {
-      if (!values.preferences.care_priority || !values.preferences.radius_miles) {
-        form.setError("preferences.care_priority", {
-          type: "manual",
-          message: "Select a care priority and radius or skip for now.",
-        });
-        return;
+      if (!syncResponse.ok) {
+        let detail = "Backend profile sync failed.";
+        try {
+          const payload = await syncResponse.json();
+          if (payload && typeof payload.message === "string" && payload.message.trim()) {
+            detail = payload.message.trim();
+          }
+        } catch {
+          // Ignore parse failures and keep generic fallback.
+        }
+        throw new Error(`Profile saved locally, but backend sync failed: ${detail}`);
+      }
+
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(DRAFT_KEY);
       }
     }
     if (step.id === "review_confirm") {

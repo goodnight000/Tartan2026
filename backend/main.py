@@ -30,6 +30,43 @@ from memory import MemoryPolicyError, MemoryService, SQLiteMemoryDB, canonical_p
 from memory.time_utils import parse_iso, to_iso, utc_now
 
 
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _load_local_env_file(path: Path) -> None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not _ENV_KEY_RE.fullmatch(key):
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+def _bootstrap_local_env() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = [
+        repo_root / ".env",
+        repo_root / "backend/.env",
+        repo_root / "frontend/.env.local",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            _load_local_env_file(candidate)
+
+
+_bootstrap_local_env()
+
+
 def _stable_id(prefix: str, value: str) -> str:
     return f"{prefix}_{hashlib.sha1(value.strip().lower().encode('utf-8')).hexdigest()[:20]}"
 
@@ -86,7 +123,7 @@ class SymptomPayload(BaseModel):
 
 
 class CarePilotApp:
-    transactional_tools = {"appointment_book", "medication_refill_request"}
+    transactional_tools = {"appointment_book", "medical_purchase", "medication_refill_request"}
 
     def __init__(self) -> None:
         db_path = os.getenv(
@@ -105,6 +142,7 @@ class CarePilotApp:
                 "clinical_profile_upsert",
                 "lab_clinic_discovery",
                 "appointment_book",
+                "medical_purchase",
                 "medication_refill_request",
                 "consent_token_issue",
             },
@@ -199,6 +237,18 @@ app.add_middleware(
 )
 
 
+_TRUSTED_USER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{1,63}$")
+
+
+def _validated_trusted_user_id(x_user_id: str) -> str:
+    candidate = x_user_id.strip()
+    if not candidate:
+        raise HTTPException(status_code=400, detail="Invalid X-User-Id")
+    if not _TRUSTED_USER_ID_RE.fullmatch(candidate):
+        raise HTTPException(status_code=400, detail="Invalid X-User-Id")
+    return candidate
+
+
 def get_user_id(auth_header: str | None) -> str:
     if not auth_header:
         if os.getenv("ALLOW_ANON", "false").lower() == "true":
@@ -215,6 +265,12 @@ def get_user_id(auth_header: str | None) -> str:
     if len(raw) > 96:
         return f"token_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:24]}"
     return raw
+
+
+def resolve_user_id(authorization: str | None, x_user_id: str | None) -> str:
+    if x_user_id is not None:
+        return _validated_trusted_user_id(x_user_id)
+    return get_user_id(authorization)
 
 
 def _build_ctx(
@@ -243,6 +299,9 @@ def _emit_sse(event: str, data: dict[str, Any]) -> str:
 
 
 _OPENAI_API_BASE = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+_OPENROUTER_API_BASE = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+_DEDALUS_API_BASE = os.getenv("DEDALUS_BASE_URL", os.getenv("DEDALUS_API_BASE_URL", "https://api.dedaluslabs.ai/v1")).rstrip("/")
+_ANTHROPIC_API_BASE = os.getenv("ANTHROPIC_API_BASE_URL", "https://api.anthropic.com/v1").rstrip("/")
 _MAX_AUDIO_BYTES = int(os.getenv("CAREPILOT_MAX_AUDIO_BYTES", str(20 * 1024 * 1024)))
 _MAX_DOCUMENT_BYTES = int(os.getenv("CAREPILOT_MAX_DOCUMENT_BYTES", str(25 * 1024 * 1024)))
 _ALLOWED_AUDIO_MIME_TYPES = {
@@ -374,6 +433,265 @@ def _coerce_completion_text(response_json: dict[str, Any]) -> str:
                     parts.append(text_value)
         return "\n".join(parts)
     return ""
+
+
+def _chat_provider_candidates() -> list[dict[str, Any]]:
+    provider_preference = (os.getenv("CAREPILOT_CHAT_PROVIDER") or "auto").strip().lower()
+    candidates: list[dict[str, Any]] = []
+
+    anthropic_api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+    if anthropic_api_key:
+        candidates.append(
+            {
+                "provider": "anthropic",
+                "base_url": _ANTHROPIC_API_BASE,
+                "api_key": anthropic_api_key,
+                "model": (os.getenv("ANTHROPIC_MODEL") or "claude-3-5-sonnet-latest").strip(),
+            }
+        )
+
+    dedalus_api_key = (os.getenv("DEDALUS_API_KEY") or "").strip()
+    if dedalus_api_key:
+        candidates.append(
+            {
+                "provider": "dedalus",
+                "base_url": _DEDALUS_API_BASE or _OPENROUTER_API_BASE or _OPENAI_API_BASE,
+                "api_key": dedalus_api_key,
+                "model": (os.getenv("DEDALUS_MODEL") or "anthropic/claude-opus-4-5").strip(),
+            }
+        )
+
+    openrouter_api_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    if openrouter_api_key:
+        candidates.append(
+            {
+                "provider": "openrouter",
+                "base_url": _OPENROUTER_API_BASE,
+                "api_key": openrouter_api_key,
+                "model": (os.getenv("OPENROUTER_MODEL") or "openai/gpt-4o-mini").strip(),
+            }
+        )
+
+    openai_api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if openai_api_key:
+        candidates.append(
+            {
+                "provider": "openai",
+                "base_url": _OPENAI_API_BASE,
+                "api_key": openai_api_key,
+                "model": (os.getenv("CAREPILOT_CHAT_MODEL") or "gpt-4o-mini").strip(),
+            }
+        )
+
+    if provider_preference in {"", "auto"}:
+        return candidates
+
+    aliases = {
+        "claude": "anthropic",
+        "anthropic": "anthropic",
+        "dedalus": "dedalus",
+        "openrouter": "openrouter",
+        "openai": "openai",
+    }
+    canonical = aliases.get(provider_preference)
+    if not canonical:
+        return candidates
+    preferred = [candidate for candidate in candidates if candidate["provider"] == canonical]
+    others = [candidate for candidate in candidates if candidate["provider"] != canonical]
+    return preferred + others
+
+
+def _llm_context_snapshot(context: dict[str, Any]) -> dict[str, Any]:
+    clinical = context.get("clinical", {}) if isinstance(context.get("clinical"), dict) else {}
+    conditions = [row.get("name") for row in clinical.get("conditions", []) if isinstance(row, dict) and row.get("name")]
+    allergies = [
+        row.get("substance")
+        for row in clinical.get("allergies", [])
+        if isinstance(row, dict) and row.get("substance")
+    ]
+    active_symptoms = [
+        row.get("symptom")
+        for row in clinical.get("active_symptoms", [])
+        if isinstance(row, dict) and row.get("symptom")
+    ]
+    medications = [row.get("name") for row in clinical.get("medications", []) if isinstance(row, dict) and row.get("name")]
+    booking_defaults = _booking_defaults_from_context(context)
+    last_discovery = _preference_value_by_key(context, "last_lab_discovery") or {}
+    ranked_options = _ranked_options_with_fallback([], context)
+    return {
+        "conditions": conditions[:8],
+        "allergies": allergies[:8],
+        "active_symptoms": active_symptoms[:8],
+        "medications": medications[:8],
+        "booking_defaults": booking_defaults,
+        "last_lab_discovery": last_discovery,
+        "ranked_options": ranked_options[:5],
+    }
+
+
+def _coerce_anthropic_text(response_json: dict[str, Any]) -> str:
+    content = response_json.get("content")
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "text":
+            continue
+        text_value = item.get("text")
+        if isinstance(text_value, str) and text_value.strip():
+            parts.append(text_value.strip())
+    return "\n".join(parts).strip()
+
+
+def _openai_compatible_chat(
+    *,
+    provider: dict[str, Any],
+    messages: list[dict[str, str]],
+    timeout_seconds: float,
+) -> str | None:
+    payload = {
+        "model": provider["model"],
+        "temperature": 0.35,
+        "messages": messages,
+    }
+    headers: dict[str, str] = {
+        "Authorization": f"Bearer {provider['api_key']}",
+        "Content-Type": "application/json",
+    }
+    site_url = (os.getenv("OPENROUTER_SITE_URL") or "").strip()
+    app_name = (os.getenv("OPENROUTER_APP_NAME") or "MedClaw").strip()
+    if provider["provider"] in {"dedalus", "openrouter"}:
+        if site_url:
+            headers["HTTP-Referer"] = site_url
+        if app_name:
+            headers["X-Title"] = app_name
+    with httpx.Client(timeout=httpx.Timeout(timeout_seconds, connect=8.0)) as client:
+        response = client.post(f"{provider['base_url']}/chat/completions", headers=headers, json=payload)
+    if response.status_code >= 400:
+        raise RuntimeError(_provider_error_message(response))
+    completion_payload = response.json()
+    text = _coerce_completion_text(completion_payload).strip()
+    return text or None
+
+
+def _anthropic_chat(
+    *,
+    provider: dict[str, Any],
+    system_prompt: str,
+    context_snapshot: dict[str, Any],
+    history: list[dict[str, str]],
+    user_message: str,
+    timeout_seconds: float,
+) -> str | None:
+    anthropic_messages: list[dict[str, str]] = []
+    for turn in history:
+        role = str(turn.get("role") or "").strip().lower()
+        if role not in {"user", "assistant"}:
+            continue
+        content = str(turn.get("content") or "").strip()
+        if not content:
+            continue
+        anthropic_messages.append({"role": role, "content": content[:1200]})
+    anthropic_messages.append({"role": "user", "content": user_message.strip()[:2000]})
+
+    system_with_context = (
+        f"{system_prompt}\n\n"
+        "Session context JSON (use this for continuity and personalization):\n"
+        f"{json.dumps(context_snapshot, ensure_ascii=True)}"
+    )
+    payload = {
+        "model": provider["model"],
+        "max_tokens": 700,
+        "temperature": 0.35,
+        "system": system_with_context,
+        "messages": anthropic_messages,
+    }
+    headers = {
+        "x-api-key": str(provider["api_key"]),
+        "anthropic-version": os.getenv("ANTHROPIC_API_VERSION", "2023-06-01"),
+        "Content-Type": "application/json",
+    }
+    with httpx.Client(timeout=httpx.Timeout(timeout_seconds, connect=8.0)) as client:
+        response = client.post(f"{provider['base_url']}/messages", headers=headers, json=payload)
+    if response.status_code >= 400:
+        raise RuntimeError(_provider_error_message(response))
+    completion_payload = response.json()
+    text = _coerce_anthropic_text(completion_payload)
+    return text or None
+
+
+def _llm_chat_reply(
+    *,
+    message: str,
+    context: dict[str, Any],
+    history: list[dict[str, str]],
+    fallback_reply: str,
+) -> str:
+    providers = _chat_provider_candidates()
+    if not providers:
+        print("chat llm unavailable: no provider key found in runtime env")  # noqa: T201
+        return fallback_reply
+
+    # Keep tool execution deterministic, but use an LLM for user-facing phrasing and continuity.
+    system_prompt = (
+        "You are MedClaw, a pragmatic and warm health support assistant. "
+        "Sound human, natural, and concise. Avoid robotic boilerplate. "
+        "Maintain continuity with the user's current goal and recent context; do not switch topics abruptly. "
+        "For symptoms, provide likely possibilities and practical next steps, clearly marking uncertainty. "
+        "Never claim a confirmed diagnosis, and do not replace urgent emergency instructions."
+    )
+
+    context_snapshot = _llm_context_snapshot(context)
+    recent_history = [turn for turn in history[-10:] if isinstance(turn, dict)]
+    openai_messages: list[dict[str, str]] = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "system",
+            "content": (
+                "Session context JSON (use this for continuity and personalization):\n"
+                + json.dumps(context_snapshot, ensure_ascii=True)
+            ),
+        },
+        *[
+            {
+                "role": str(turn.get("role") or "").strip().lower(),
+                "content": str(turn.get("content") or "").strip()[:1200],
+            }
+            for turn in recent_history
+            if str(turn.get("role") or "").strip().lower() in {"user", "assistant"}
+            and str(turn.get("content") or "").strip()
+        ],
+        {"role": "user", "content": message.strip()[:2000]},
+    ]
+    timeout_seconds = float(os.getenv("CAREPILOT_CHAT_TIMEOUT_SECONDS", "25"))
+    for provider in providers:
+        provider_name = str(provider.get("provider") or "unknown")
+        try:
+            if provider_name == "anthropic":
+                text = _anthropic_chat(
+                    provider=provider,
+                    system_prompt=system_prompt,
+                    context_snapshot=context_snapshot,
+                    history=openai_messages[2:-1],
+                    user_message=message,
+                    timeout_seconds=timeout_seconds,
+                )
+            else:
+                text = _openai_compatible_chat(
+                    provider=provider,
+                    messages=openai_messages,
+                    timeout_seconds=timeout_seconds,
+                )
+            if text:
+                print(f"chat llm provider used ({provider_name})")  # noqa: T201
+                return text
+            print(f"chat llm provider empty response ({provider_name})")  # noqa: T201
+        except Exception as exc:
+            print(f"chat llm call failed ({provider_name}): {exc}")  # noqa: T201
+            continue
+    return fallback_reply
 
 
 def _estimate_transcription_confidence(segments: list[dict[str, Any]]) -> float:
@@ -756,21 +1074,35 @@ def _validate_document_upload(file_name: str, mime_type: str) -> None:
         raise HTTPException(status_code=415, detail="Unsupported document/image format.")
 
 
-def _extract_ranked_options_from_history(history: list[dict[str, str]]) -> list[dict[str, str]]:
-    options: list[dict[str, str]] = []
+def _normalize_ranked_option_location(location: str | None) -> str:
+    candidate = re.sub(r"\s+", " ", str(location or "")).strip(" .")
+    if not candidate:
+        return "local area"
+    lowered = candidate.lower()
+    if lowered in {"hello", "hi", "hey", "hey there", "ok", "okay", "thanks", "thank you"}:
+        return "local area"
+    return candidate
+
+
+def _extract_ranked_options_from_history(history: list[dict[str, str]]) -> list[dict[str, Any]]:
+    options: list[dict[str, Any]] = []
     list_pattern = re.compile(r"^\s*(\d+)[\).:-]\s*(?:\*\*)?(.+?)(?:\*\*)?\s*(?:[—-]\s*(.+?))?\s*$")
 
-    def _append_option(name: str, location: str | None) -> None:
+    def _append_option(name: str, location: str | None, source_url: str | None = None) -> None:
         cleaned_name = (name or "").strip()
         if not cleaned_name:
             return
-        cleaned_location = (location or "local area").strip() or "local area"
-        key = f"{cleaned_name.lower()}::{cleaned_location.lower()}"
-        if any(f"{row['name'].lower()}::{row['location'].lower()}" == key for row in options):
+        cleaned_location = _normalize_ranked_option_location(location)
+        cleaned_source_url = str(source_url or "").strip() or None
+        key = f"{cleaned_name.lower()}::{cleaned_location.lower()}::{str(cleaned_source_url).lower()}"
+        if any(
+            f"{row['name'].lower()}::{row['location'].lower()}::{str(row.get('source_url')).lower()}" == key
+            for row in options
+        ):
             return
-        options.append({"name": cleaned_name, "location": cleaned_location})
+        options.append({"name": cleaned_name, "location": cleaned_location, "source_url": cleaned_source_url})
 
-    def _extract_from_json_blob(content: str) -> list[dict[str, str]]:
+    def _extract_from_json_blob(content: str) -> list[dict[str, Any]]:
         start = content.find("{")
         end = content.rfind("}")
         if start < 0 or end <= start:
@@ -782,24 +1114,26 @@ def _extract_ranked_options_from_history(history: list[dict[str, str]]) -> list[
         if isinstance(payload, dict) and isinstance(payload.get("result"), dict):
             payload = payload["result"]
 
-        extracted: list[dict[str, str]] = []
+        extracted: list[dict[str, Any]] = []
         if isinstance(payload, dict) and isinstance(payload.get("items"), list):
             for item in payload["items"]:
                 if not isinstance(item, dict):
                     continue
                 name = str(item.get("name") or "").strip()
-                location = str(item.get("address") or item.get("location") or "local area").strip()
+                location = _normalize_ranked_option_location(str(item.get("address") or item.get("location") or ""))
+                source_url = str(item.get("source_url") or item.get("url") or "").strip() or None
                 if name:
-                    extracted.append({"name": name, "location": location or "local area"})
+                    extracted.append({"name": name, "location": location, "source_url": source_url})
         elif isinstance(payload, dict) and isinstance(payload.get("options"), list):
             for item in payload["options"]:
                 if not isinstance(item, dict):
                     continue
                 name = str(item.get("name") or "").strip()
                 criteria = item.get("criteria") if isinstance(item.get("criteria"), dict) else {}
-                location = str(criteria.get("origin") or item.get("location") or "local area").strip()
+                location = _normalize_ranked_option_location(str(criteria.get("origin") or item.get("location") or ""))
+                source_url = str(item.get("source_url") or item.get("url") or "").strip() or None
                 if name:
-                    extracted.append({"name": name, "location": location or "local area"})
+                    extracted.append({"name": name, "location": location, "source_url": source_url})
         return extracted
 
     for item in reversed(history):
@@ -821,12 +1155,12 @@ def _extract_ranked_options_from_history(history: list[dict[str, str]]) -> list[
         json_items = _extract_from_json_blob(content)
         if json_items:
             for row in json_items:
-                _append_option(row["name"], row["location"])
+                _append_option(row["name"], row["location"], row.get("source_url"))
             break
     return options
 
 
-def _extract_ranked_options_from_conversation_memory(context: dict[str, Any]) -> list[dict[str, str]]:
+def _extract_ranked_options_from_conversation_memory(context: dict[str, Any]) -> list[dict[str, Any]]:
     conversational = context.get("conversational", {})
     prefs = conversational.get("preferences", []) if isinstance(conversational, dict) else []
     target_session = str(context.get("_session_key") or context.get("session_key") or "")
@@ -839,28 +1173,40 @@ def _extract_ranked_options_from_conversation_memory(context: dict[str, Any]) ->
             if stored_session and stored_session != target_session:
                 continue
         items = value.get("items", []) if isinstance(value, dict) else []
-        options: list[dict[str, str]] = []
+        options: list[dict[str, Any]] = []
         for item in items:
             if not isinstance(item, dict):
                 continue
             name = str(item.get("name") or "").strip()
-            location = str(item.get("location") or item.get("address") or "local area").strip()
+            location = _normalize_ranked_option_location(str(item.get("location") or item.get("address") or ""))
+            source_url = str(item.get("source_url") or item.get("url") or "").strip() or None
             if name:
-                options.append({"name": name, "location": location or "local area"})
+                options.append({"name": name, "location": location, "source_url": source_url})
         if options:
             return options
     return []
 
 
-def _ranked_options_with_fallback(history: list[dict[str, str]], context: dict[str, Any]) -> list[dict[str, str]]:
+def _ranked_options_with_fallback(history: list[dict[str, str]], context: dict[str, Any]) -> list[dict[str, Any]]:
     options = _extract_ranked_options_from_history(history)
     if options:
         return options
     return _extract_ranked_options_from_conversation_memory(context)
 
 
+def _booking_mode_from_env() -> str:
+    disable_external = os.getenv("CAREPILOT_DISABLE_EXTERNAL_WEB", "false").strip().lower() == "true"
+    return "simulated" if disable_external else "live"
+
+
 def _selected_option_index(message: str) -> int | None:
     lowered = message.lower()
+    numeric_match = re.search(r"\b(?:option|open|pick|choose|select)\s*([1-5])\b", lowered)
+    if numeric_match:
+        return int(numeric_match.group(1))
+    leading_numeric = re.match(r"^\s*([1-5])(?:\s|$)", lowered)
+    if leading_numeric:
+        return int(leading_numeric.group(1))
     if any(token in lowered for token in ["first option", "option 1", "1st option", "the first one"]):
         return 1
     if any(token in lowered for token in ["second option", "option 2", "2nd option", "the second one"]):
@@ -904,6 +1250,16 @@ def _preference_value_by_key(context: dict[str, Any], key: str) -> dict[str, Any
     return None
 
 
+def _booking_defaults_from_context(context: dict[str, Any]) -> dict[str, Any]:
+    booking_defaults = _preference_value_by_key(context, "appointment_booking_defaults") or {}
+    purchase_defaults = _preference_value_by_key(context, "medical_purchase_defaults") or {}
+    merged = dict(booking_defaults)
+    for key in ("full_name", "email", "phone"):
+        if not merged.get(key) and purchase_defaults.get(key):
+            merged[key] = purchase_defaults[key]
+    return merged
+
+
 def _active_booking_draft(context: dict[str, Any], session_key: str) -> dict[str, Any] | None:
     value = _preference_value_by_key(context, "appointment_booking_draft")
     if not value:
@@ -945,16 +1301,159 @@ def _extract_provider_from_text(message: str) -> str | None:
 
 
 def _extract_location_from_text(message: str) -> str | None:
-    match = re.search(r"\bin\s+([A-Za-z][A-Za-z .'-]{1,80})(?=$|[?.!,])", message, flags=re.IGNORECASE)
-    if not match:
+    text = message.strip()
+    if not text:
         return None
-    candidate = re.sub(r"\s+", " ", match.group(1)).strip(" .")
-    if not candidate:
-        return None
-    lowered = candidate.lower()
-    if lowered in {"the morning", "the afternoon", "the evening", "next week"}:
-        return None
-    return candidate
+
+    zip_only = re.fullmatch(r"\d{5}(?:-\d{4})?", text)
+    if zip_only:
+        return zip_only.group(0)
+
+    zip_labeled = re.search(r"\bzip(?:\s*code)?[:\s-]*(\d{5}(?:-\d{4})?)\b", text, flags=re.IGNORECASE)
+    if zip_labeled:
+        return zip_labeled.group(1)
+
+    match = re.search(
+        r"\b(?:in|near|around)\s+([A-Za-z0-9][A-Za-z0-9 .,\'-]{1,80})(?=$|[?.!])",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        candidate = re.sub(r"\s+", " ", match.group(1)).strip(" .")
+        lowered = candidate.lower()
+        if candidate and lowered not in {"the morning", "the afternoon", "the evening", "next week"}:
+            return candidate
+
+    # Support short bare location replies like "Pittsburgh" when this turn is likely filling a location slot.
+    if re.fullmatch(r"[A-Za-z][A-Za-z .,\'-]{1,80}", text):
+        candidate = re.sub(r"\s+", " ", text).strip(" .")
+        lowered = candidate.lower()
+        if any(token in lowered for token in ["option", "first", "second", "third", "fourth", "fifth"]):
+            return None
+        if lowered.startswith(("open ", "pick ", "choose ", "select ")):
+            return None
+        if re.search(r"\b(how|what|who|can|could|would|should|do|are|is|am)\b", lowered):
+            return None
+        stopwords = {
+            "yes",
+            "no",
+            "hi",
+            "hello",
+            "hey",
+            "hey there",
+            "thanks",
+            "thank you",
+            "okay",
+            "ok",
+            "tomorrow",
+            "today",
+            "next week",
+            "morning",
+            "afternoon",
+            "evening",
+        }
+        if lowered not in stopwords and len(lowered.split()) <= 4:
+            return candidate
+    return None
+
+
+def _needs_location_reprompt(message: str, history: list[dict[str, str]]) -> bool:
+    if not _history_requested_location(history):
+        return False
+    if _extract_location_from_text(message):
+        return False
+    lowered = message.lower().strip()
+    if not lowered:
+        return True
+    if _selected_option_index(lowered):
+        return False
+    if any(token in lowered for token in ["book", "appointment", "schedule", "lab", "clinic", "blood test"]):
+        return False
+    return True
+
+
+def _history_has_booking_or_lab_intent(history: list[dict[str, str]]) -> bool:
+    intent_tokens = ["book", "appointment", "schedule", "lab", "clinic", "blood test", "diagnostic"]
+    for item in reversed(history):
+        if item.get("role") != "user":
+            continue
+        content = item.get("content", "").lower()
+        if any(token in content for token in intent_tokens):
+            return True
+    return False
+
+
+def _history_requested_location(history: list[dict[str, str]]) -> bool:
+    location_prompts = [
+        "need your location first",
+        "share your city or zip code",
+        "what location or city should i use",
+    ]
+    for item in reversed(history):
+        if item.get("role") != "assistant":
+            continue
+        content = item.get("content", "").lower()
+        if any(prompt in content for prompt in location_prompts):
+            return True
+    return False
+
+
+def _history_requested_booking_details(history: list[dict[str, str]]) -> bool:
+    booking_prompts = [
+        "which lab/clinic should i book with",
+        "choose one option number or name",
+        "what day and time should i request",
+        "what location or city should i use",
+        "what is the booking page url",
+        "what is your full name",
+        "what email should i use",
+        "what phone number should i use",
+    ]
+    for item in reversed(history):
+        if item.get("role") != "assistant":
+            continue
+        content = item.get("content", "").lower()
+        if any(prompt in content for prompt in booking_prompts):
+            return True
+    return False
+
+
+def _looks_off_topic_for_booking(message: str) -> bool:
+    lowered = message.lower().strip()
+    if not lowered:
+        return False
+    off_topic_markers = [
+        "i don't feel",
+        "i dont feel",
+        "i feel",
+        "i'm sick",
+        "im sick",
+        "headache",
+        "stomach pain",
+        "nausea",
+        "dizzy",
+        "how are you",
+        "what is your name",
+        "who are you",
+        "can you say",
+        "hello",
+        "hi",
+        "hey",
+    ]
+    return any(marker in lowered for marker in off_topic_markers)
+
+
+def _is_location_followup_turn(message: str, history: list[dict[str, str]]) -> bool:
+    lowered = message.lower().strip()
+    location = _extract_location_from_text(message)
+    if not location:
+        return False
+
+    # Only treat this as follow-up when the user sent primarily a location answer.
+    if any(token in lowered for token in ["book", "appointment", "schedule", "lab", "clinic", "blood test"]):
+        return False
+
+    return _history_requested_location(history) or _history_has_booking_or_lab_intent(history)
 
 
 def _extract_phone_from_text(message: str) -> str | None:
@@ -966,6 +1465,78 @@ def _extract_phone_from_text(message: str) -> str | None:
     if len(digits) == 11 and digits.startswith("1"):
         return f"+{digits}"
     return f"+{digits}"
+
+
+def _extract_email_from_text(message: str) -> str | None:
+    match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", message)
+    return match.group(0).strip() if match else None
+
+
+def _extract_url_from_text(message: str) -> str | None:
+    match = re.search(r"https?://[^\s)>\"]+", message)
+    if not match:
+        return None
+    return match.group(0).strip().rstrip(".,;")
+
+
+def _extract_full_name_from_text(message: str) -> str | None:
+    patterns = [
+        r"\bmy name is ([A-Za-z][A-Za-z' -]{1,80})\b",
+        r"\bi am ([A-Za-z][A-Za-z' -]{1,80})\b",
+        r"\bi'm ([A-Za-z][A-Za-z' -]{1,80})\b",
+    ]
+    disallowed_terms = {
+        "sick",
+        "pain",
+        "fever",
+        "nausea",
+        "dizziness",
+        "headache",
+        "appointment",
+        "booking",
+        "test",
+        "lab",
+    }
+    for pattern in patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if not match:
+            continue
+        candidate = re.sub(r"\s+", " ", match.group(1)).strip(" .")
+        tokens = [token.strip(" .").lower() for token in candidate.split()]
+        if any(token in disallowed_terms for token in tokens):
+            continue
+        if len(candidate.split()) >= 2:
+            return candidate
+    return None
+
+
+def _extract_purchase_quantity(message: str) -> int | None:
+    match = re.search(r"\b(\d{1,3})\s*(?:x|units?|items?|kits?|tests?)\b", message, flags=re.IGNORECASE)
+    if match:
+        return max(1, int(match.group(1)))
+    return None
+
+
+def _extract_purchase_item(message: str) -> str | None:
+    patterns = [
+        r"\b(?:buy|purchase|order)\s+(?:a|an|the)?\s*([A-Za-z0-9][A-Za-z0-9'()\-/ ]{2,80})",
+        r"\b(?:need|want)\s+(?:to\s+)?(?:buy|purchase|order)\s+(?:a|an|the)?\s*([A-Za-z0-9][A-Za-z0-9'()\-/ ]{2,80})",
+    ]
+    stop_words = (" from ", " at ", " on ", " using ")
+    for pattern in patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if not match:
+            continue
+        item = re.sub(r"\s+", " ", match.group(1)).strip(" .")
+        lowered = item.lower()
+        for token in stop_words:
+            idx = lowered.find(token)
+            if idx > 0:
+                item = item[:idx].strip()
+                break
+        if len(item) >= 3:
+            return item
+    return None
 
 
 def _extract_explicit_time(message: str) -> tuple[int, int] | None:
@@ -1068,6 +1639,9 @@ def _persist_booking_defaults(user_id: str, draft: dict[str, Any], session_key: 
         "provider_name": draft.get("provider_name"),
         "location": draft.get("location"),
         "phone": draft.get("phone"),
+        "email": draft.get("email"),
+        "full_name": draft.get("full_name"),
+        "booking_url": draft.get("booking_url"),
         "last_slot_datetime": draft.get("slot_datetime"),
         "session_key": session_key,
         "updated_at": to_iso(utc_now()),
@@ -1084,7 +1658,7 @@ def _persist_booking_defaults(user_id: str, draft: dict[str, Any], session_key: 
     )
 
 
-def _format_booking_missing_prompt(missing: list[str], ranked_options: list[dict[str, str]]) -> str:
+def _format_booking_missing_prompt(missing: list[str], ranked_options: list[dict[str, Any]]) -> str:
     prompts: list[str] = []
     if "provider_name" in missing:
         if ranked_options:
@@ -1100,6 +1674,14 @@ def _format_booking_missing_prompt(missing: list[str], ranked_options: list[dict
         prompts.append("What day and time should I request? Example: Tuesday 9:00 AM next week.")
     if "location" in missing:
         prompts.append("What location or city should I use?")
+    if "booking_url" in missing:
+        prompts.append("What is the booking page URL for this provider?")
+    if "full_name" in missing:
+        prompts.append("What is your full name as it appears on your records?")
+    if "email" in missing:
+        prompts.append("What email should I use for booking confirmation?")
+    if "phone" in missing:
+        prompts.append("What phone number should I use for booking updates?")
     return " ".join(prompts)
 
 
@@ -1114,14 +1696,23 @@ def _booking_flow_response(
     ranked_options = _ranked_options_with_fallback(history, context)
     selected_idx = _selected_option_index(lowered)
     draft = _active_booking_draft(context, ctx.session_key)
-    defaults = _preference_value_by_key(context, "appointment_booking_defaults") or {}
+    defaults = _booking_defaults_from_context(context)
+    sanitized_location_hint = _extract_location_from_text(location_hint or "") if location_hint else None
     provider_guess = _extract_provider_from_text(message)
     location_guess = _extract_location_from_text(message)
     phone_guess = _extract_phone_from_text(message)
+    email_guess = _extract_email_from_text(message)
+    full_name_guess = _extract_full_name_from_text(message)
+    booking_url_guess = _extract_url_from_text(message)
     slot_guess = _extract_slot_datetime_from_text(message)
     booking_intent = any(word in lowered for word in ["book", "schedule"]) or any(
         phrase in lowered for phrase in ["set up an appointment", "make an appointment"]
     )
+
+    if draft and not any([selected_idx, provider_guess, location_guess, phone_guess, slot_guess, booking_intent]):
+        if _looks_off_topic_for_booking(message) or not _history_requested_booking_details(history):
+            _clear_booking_draft(ctx.user_id, ctx.session_key)
+            return None, None, False
 
     if draft and any(word in lowered for word in ["cancel", "never mind", "nevermind", "stop"]):
         _clear_booking_draft(ctx.user_id, ctx.session_key)
@@ -1140,25 +1731,35 @@ def _booking_flow_response(
         return None, None, False
 
     working = dict(draft or {})
-    working.setdefault("mode", "simulated")
+    working["mode"] = _booking_mode_from_env()
     if not working.get("provider_name") and defaults.get("provider_name"):
         working["provider_name"] = defaults["provider_name"]
     if not working.get("location") and defaults.get("location"):
         working["location"] = defaults["location"]
     if not working.get("phone") and defaults.get("phone"):
         working["phone"] = defaults["phone"]
-    if not working.get("location") and location_hint:
-        working["location"] = location_hint
+    if not working.get("email") and defaults.get("email"):
+        working["email"] = defaults["email"]
+    if not working.get("full_name") and defaults.get("full_name"):
+        working["full_name"] = defaults["full_name"]
+    if not working.get("booking_url") and defaults.get("booking_url"):
+        working["booking_url"] = defaults["booking_url"]
+    if not working.get("location") and sanitized_location_hint:
+        working["location"] = sanitized_location_hint
 
     if selected_idx and 1 <= selected_idx <= len(ranked_options):
         selected = ranked_options[selected_idx - 1]
         working["provider_name"] = selected["name"]
         working["location"] = selected["location"]
+        if selected.get("source_url"):
+            working["booking_url"] = str(selected["source_url"])
     elif ranked_options:
         for option in ranked_options:
             if option["name"].lower() in lowered:
                 working["provider_name"] = option["name"]
                 working["location"] = option["location"]
+                if option.get("source_url"):
+                    working["booking_url"] = str(option["source_url"])
                 break
 
     if provider_guess:
@@ -1169,6 +1770,12 @@ def _booking_flow_response(
         working["slot_datetime"] = slot_guess
     if phone_guess:
         working["phone"] = phone_guess
+    if email_guess:
+        working["email"] = email_guess
+    if full_name_guess:
+        working["full_name"] = full_name_guess
+    if booking_url_guess:
+        working["booking_url"] = booking_url_guess
     if not working.get("slot_datetime"):
         history_slot = _extract_slot_datetime_from_history(history)
         if history_slot:
@@ -1178,6 +1785,10 @@ def _booking_flow_response(
         working["slot_datetime"] = to_iso(default_slot)
 
     required_missing = [field for field in ["provider_name", "slot_datetime", "location"] if not working.get(field)]
+    if str(working.get("mode") or _booking_mode_from_env()) in {"live", "call_to_book"}:
+        for field in ["booking_url", "full_name", "email", "phone"]:
+            if not working.get(field):
+                required_missing.append(field)
     if required_missing:
         _persist_booking_draft(ctx.user_id, ctx.session_key, working)
         prompt = _format_booking_missing_prompt(required_missing, ranked_options)
@@ -1187,11 +1798,17 @@ def _booking_flow_response(
         "provider_name": str(working["provider_name"]).strip(),
         "slot_datetime": str(working["slot_datetime"]).strip(),
         "location": str(working["location"]).strip(),
-        "mode": "simulated",
+        "mode": str(working.get("mode") or _booking_mode_from_env()),
         "idempotency_key": uuid.uuid4().hex,
     }
     if working.get("phone"):
         action_payload["phone"] = str(working["phone"]).strip()
+    if working.get("email"):
+        action_payload["email"] = str(working["email"]).strip()
+    if working.get("full_name"):
+        action_payload["full_name"] = str(working["full_name"]).strip()
+    if working.get("booking_url"):
+        action_payload["booking_url"] = str(working["booking_url"]).strip()
 
     payload_hash = canonical_payload_hash(action_payload)
     consent = container.executor.execute(
@@ -1234,10 +1851,17 @@ def _assistant_reply(message: str, context: dict[str, Any], history: list[dict[s
     active_symptoms = [row.get("symptom") for row in clinical.get("active_symptoms", []) if row.get("symptom")]
     meds = [row.get("name") for row in clinical.get("medications", []) if row.get("name")]
     ranked_options = _ranked_options_with_fallback(history, context)
-    booking_defaults = _preference_value_by_key(context, "appointment_booking_defaults") or {}
+    booking_defaults = _booking_defaults_from_context(context)
     known_location = _extract_location_from_text(message) or booking_defaults.get("location")
 
     lowered = message.lower().strip()
+    if _is_location_followup_turn(message, history):
+        location = _extract_location_from_text(message) or "that location"
+        return (
+            f"Thanks. I can use {location} to find and rank nearby labs/clinics. "
+            "I will prepare that now for your confirmation."
+        )
+
     asks_memory = any(
         phrase in lowered
         for phrase in [
@@ -1280,6 +1904,28 @@ def _assistant_reply(message: str, context: dict[str, Any], history: list[dict[s
                 "I will put this into a confirmation step before execution."
             )
 
+    purchase_intent = any(word in lowered for word in ["buy", "purchase", "order", "checkout"]) and any(
+        word in lowered for word in ["medical", "lab", "test", "kit", "health"]
+    )
+    if purchase_intent:
+        purchase_url = _extract_url_from_text(message)
+        item_name = _extract_purchase_item(message)
+        missing: list[str] = []
+        if not item_name:
+            missing.append("item_name")
+        if not purchase_url:
+            missing.append("purchase_url")
+        if missing:
+            prompts = []
+            if "item_name" in missing:
+                prompts.append("What medical item/test should I order?")
+            if "purchase_url" in missing:
+                prompts.append("Please share the exact checkout/product URL.")
+            return " ".join(prompts)
+        return (
+            "I can prepare this medical purchase action with a confirmation checkpoint before final submission."
+        )
+
     if any(word in lowered for word in ["book", "appointment", "schedule", "blood test", "lab"]):
         if not ranked_options and not known_location:
             return (
@@ -1298,11 +1944,33 @@ def _assistant_reply(message: str, context: dict[str, Any], history: list[dict[s
             "then prepare a booking action for your confirmation."
         )
 
-    if any(word in lowered for word in ["headache", "pain", "sick", "nausea", "fever", "rash", "dizzy"]):
+    symptom_cause_hints: list[tuple[str, str]] = []
+    if "headache" in lowered:
+        symptom_cause_hints.append(("headache", "dehydration, tension, migraine, sinus irritation, or poor sleep"))
+    if "dizzy" in lowered or "dizziness" in lowered:
+        symptom_cause_hints.append(
+            ("dizziness", "dehydration, low blood pressure, inner-ear issues, medication effects, or low blood sugar")
+        )
+    if "nausea" in lowered:
+        symptom_cause_hints.append(("nausea", "viral illness, reflux, medication side effects, anxiety, or food-related triggers"))
+    if "fever" in lowered:
+        symptom_cause_hints.append(("fever", "viral or bacterial infection, inflammatory illness, or medication reaction"))
+    if "cough" in lowered:
+        symptom_cause_hints.append(("cough", "viral respiratory infection, allergies, asthma irritation, or post-nasal drip"))
+    if "rash" in lowered:
+        symptom_cause_hints.append(("rash", "allergic reaction, contact irritation, eczema, infection, or medication reaction"))
+
+    if symptom_cause_hints or any(word in lowered for word in ["pain", "sick"]):
+        possible_causes = " ".join(
+            f"For {symptom}, possible causes can include {causes}."
+            for symptom, causes in symptom_cause_hints[:3]
+        )
         return (
-            "I can’t diagnose what is causing this, but I can help triage. "
+            "I'm sorry you're dealing with this. I can share possibilities, but I can't diagnose online. "
+            f"{possible_causes} "
+            "These are possibilities, not a diagnosis. "
             "If symptoms are severe, worsening, or include chest pain, breathing trouble, confusion, or high fever, "
-            "seek urgent care now. Otherwise, I can log your symptoms and help plan next steps."
+            "seek urgent care now. Otherwise, I can log your symptoms and help you choose safe next steps."
         )
 
     if active_symptoms:
@@ -1320,7 +1988,7 @@ def _assistant_reply(message: str, context: dict[str, Any], history: list[dict[s
         )
 
     return (
-        "I can help with symptom triage, lab/clinic discovery, appointment booking, and medication refill coordination. "
+        "I can help with symptom triage, lab/clinic discovery, appointment booking, medical purchases, and medication refill coordination. "
         "Tell me your symptoms or the action you want to take."
     )
 
@@ -1355,8 +2023,9 @@ def _maybe_build_action_plan(
 ) -> ActionPlan | None:
     lower = message.lower()
     ranked_options = _ranked_options_with_fallback(history, context or {})
-    booking_defaults = _preference_value_by_key(context or {}, "appointment_booking_defaults") or {}
-    inferred_location = location or _extract_location_from_text(message) or booking_defaults.get("location")
+    booking_defaults = _booking_defaults_from_context(context or {})
+    location_hint = _extract_location_from_text(location or "") if location else None
+    inferred_location = location_hint or _extract_location_from_text(message) or booking_defaults.get("location")
     selected_idx = _selected_option_index(lower)
 
     if ranked_options and selected_idx and 1 <= selected_idx <= len(ranked_options):
@@ -1365,9 +2034,14 @@ def _maybe_build_action_plan(
             "provider_name": selected["name"],
             "slot_datetime": to_iso(utc_now() + timedelta(days=7)),
             "location": selected["location"],
-            "mode": "simulated",
+            "mode": _booking_mode_from_env(),
             "idempotency_key": uuid.uuid4().hex,
         }
+        if selected.get("source_url"):
+            action_payload["booking_url"] = str(selected["source_url"])
+        for field in ["full_name", "email", "phone", "booking_url"]:
+            if booking_defaults.get(field) and not action_payload.get(field):
+                action_payload[field] = booking_defaults[field]
         payload_hash = canonical_payload_hash(action_payload)
         consent = container.executor.execute(
             ctx,
@@ -1388,7 +2062,9 @@ def _maybe_build_action_plan(
             ),
         )
 
-    if any(keyword in lower for keyword in ["lab", "clinic", "diagnostic", "test center", "blood test"]):
+    location_followup = bool(inferred_location) and _is_location_followup_turn(message, history)
+
+    if any(keyword in lower for keyword in ["lab", "clinic", "diagnostic", "test center", "blood test"]) or location_followup:
         if not inferred_location:
             return None
         return ActionPlan(
@@ -1409,9 +2085,12 @@ def _maybe_build_action_plan(
             "provider_name": "Primary Care Provider",
             "slot_datetime": to_iso(utc_now() + timedelta(days=1)),
             "location": inferred_location or "TBD",
-            "mode": "simulated",
+            "mode": _booking_mode_from_env(),
             "idempotency_key": uuid.uuid4().hex,
         }
+        for field in ["full_name", "email", "phone", "booking_url"]:
+            if booking_defaults.get(field):
+                action_payload[field] = booking_defaults[field]
         payload_hash = canonical_payload_hash(action_payload)
         consent = container.executor.execute(
             ctx,
@@ -1427,6 +2106,42 @@ def _maybe_build_action_plan(
             tool="appointment_book",
             params=action_payload,
             consent_prompt="I can book this appointment after your confirmation. Proceed?",
+        )
+
+    purchase_intent = any(keyword in lower for keyword in ["buy", "purchase", "order", "checkout"]) and any(
+        keyword in lower for keyword in ["medical", "lab", "test", "kit", "health"]
+    )
+    if purchase_intent:
+        purchase_url = _extract_url_from_text(message)
+        item_name = _extract_purchase_item(message)
+        quantity = _extract_purchase_quantity(message) or 1
+        if not item_name or not purchase_url:
+            return None
+        action_payload = {
+            "item_name": item_name,
+            "quantity": quantity,
+            "purchase_url": purchase_url,
+            "mode": _booking_mode_from_env(),
+            "idempotency_key": uuid.uuid4().hex,
+        }
+        for field in ["full_name", "email", "phone"]:
+            if booking_defaults.get(field):
+                action_payload[field] = booking_defaults[field]
+        payload_hash = canonical_payload_hash(action_payload)
+        consent = container.executor.execute(
+            ctx,
+            "consent_token_issue",
+            {"action_type": "medical_purchase", "payload_hash": payload_hash, "expires_in_seconds": 300},
+        )
+        if consent.status != "succeeded":
+            return None
+        action_payload["consent_token"] = consent.data["token"]
+        action_payload["payload_hash"] = payload_hash
+        return ActionPlan(
+            tier=2,
+            tool="medical_purchase",
+            params=action_payload,
+            consent_prompt="I can execute this medical purchase workflow after your confirmation. Proceed?",
         )
 
     if any(keyword in lower for keyword in ["refill", "prescription", "medication"]):
@@ -1509,15 +2224,21 @@ def _normalize_action_result(tool_name: str, result_data: dict[str, Any]) -> dic
         confirmation_id = artifact.get("external_ref") or artifact.get("sim_ref")
         if confirmation_id:
             normalized["confirmation_id"] = confirmation_id
-        normalized.setdefault("summary", "Booking confirmed")
+        normalized.setdefault("summary", "Booking confirmed" if confirmation_id else "Booking request submitted")
+    if tool_name == "medical_purchase":
+        artifact = normalized.get("confirmation_artifact") or {}
+        confirmation_id = artifact.get("external_ref") or artifact.get("sim_ref")
+        if confirmation_id:
+            normalized["confirmation_id"] = confirmation_id
+        normalized.setdefault("summary", "Purchase confirmed" if confirmation_id else "Purchase request submitted")
     if tool_name == "medication_refill_request":
         normalized.setdefault("summary", "Refill request prepared")
     return normalized
 
 
 @app.get("/profile")
-def get_profile(authorization: str | None = Header(default=None)):
-    user_id = get_user_id(authorization)
+def get_profile(authorization: str | None = Header(default=None), x_user_id: str | None = Header(default=None)):
+    user_id = resolve_user_id(authorization, x_user_id)
     ctx = _build_ctx(user_id=user_id, session_key=None)
     profile = container.memory.clinical_profile_get(
         user_id=user_id,
@@ -1538,8 +2259,12 @@ def get_profile(authorization: str | None = Header(default=None)):
 
 
 @app.post("/profile")
-def upsert_profile(payload: ProfilePayload, authorization: str | None = Header(default=None)):
-    user_id = get_user_id(authorization)
+def upsert_profile(
+    payload: ProfilePayload,
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+):
+    user_id = resolve_user_id(authorization, x_user_id)
     ctx = _build_ctx(user_id=user_id, session_key=None)
 
     container.memory.clinical.upsert_profile(
@@ -1585,8 +2310,8 @@ def upsert_profile(payload: ProfilePayload, authorization: str | None = Header(d
 
 
 @app.get("/reminders")
-def get_reminders(authorization: str | None = Header(default=None)):
-    user_id = get_user_id(authorization)
+def get_reminders(authorization: str | None = Header(default=None), x_user_id: str | None = Header(default=None)):
+    user_id = resolve_user_id(authorization, x_user_id)
     reminders: list[dict[str, Any]] = []
     today = utc_now()
     for med in container.memory.clinical.get_medications(user_id):
@@ -1611,8 +2336,12 @@ def get_reminders(authorization: str | None = Header(default=None)):
 
 
 @app.post("/symptoms")
-def post_symptoms(payload: SymptomPayload, authorization: str | None = Header(default=None)):
-    user_id = get_user_id(authorization)
+def post_symptoms(
+    payload: SymptomPayload,
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+):
+    user_id = resolve_user_id(authorization, x_user_id)
     ctx = _build_ctx(user_id=user_id, session_key=None)
     container.memory.clinical_profile_upsert(
         user_id=user_id,
@@ -1633,20 +2362,32 @@ def post_symptoms(payload: SymptomPayload, authorization: str | None = Header(de
 
 
 @app.get("/logs/symptoms")
-def logs_symptoms(limit: int = 20, authorization: str | None = Header(default=None)):
-    user_id = get_user_id(authorization)
+def logs_symptoms(
+    limit: int = 20,
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+):
+    user_id = resolve_user_id(authorization, x_user_id)
     return {"items": container.memory.clinical.get_symptom_logs(user_id, limit)}
 
 
 @app.get("/logs/actions")
-def logs_actions(limit: int = 20, authorization: str | None = Header(default=None)):
-    user_id = get_user_id(authorization)
+def logs_actions(
+    limit: int = 20,
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+):
+    user_id = resolve_user_id(authorization, x_user_id)
     return {"items": container.memory.clinical.get_action_logs(user_id, limit)}
 
 
 @app.post("/actions/execute")
-def actions_execute(payload: ActionExecuteRequest, authorization: str | None = Header(default=None)):
-    user_id = get_user_id(authorization)
+def actions_execute(
+    payload: ActionExecuteRequest,
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+):
+    user_id = resolve_user_id(authorization, x_user_id)
     if not payload.user_confirmed:
         raise HTTPException(status_code=400, detail="User not confirmed")
 
@@ -1679,9 +2420,10 @@ def actions_execute(payload: ActionExecuteRequest, authorization: str | None = H
             if not isinstance(item, dict):
                 continue
             name = str(item.get("name") or "").strip()
-            location = str(item.get("address") or item.get("location") or "local area").strip()
+            location = _normalize_ranked_option_location(str(item.get("address") or item.get("location") or ""))
+            source_url = str(item.get("source_url") or item.get("url") or "").strip() or None
             if name:
-                memory_items.append({"name": name, "location": location or "local area"})
+                memory_items.append({"name": name, "location": location, "source_url": source_url})
         if memory_items:
             container.memory.conversation.upsert_preference(
                 user_id=user_id,
@@ -1699,6 +2441,9 @@ def actions_execute(payload: ActionExecuteRequest, authorization: str | None = H
             "provider_name": params.get("provider_name") or normalized_data.get("provider_name"),
             "location": params.get("location") or normalized_data.get("location"),
             "phone": params.get("phone"),
+            "email": params.get("email"),
+            "full_name": params.get("full_name"),
+            "booking_url": params.get("booking_url") or params.get("source_url"),
             "last_slot_datetime": params.get("slot_datetime") or normalized_data.get("slot_datetime"),
             "session_key": ctx.session_key,
             "updated_at": to_iso(utc_now()),
@@ -1708,6 +2453,23 @@ def actions_execute(payload: ActionExecuteRequest, authorization: str | None = H
             container.memory.conversation.upsert_preference(
                 user_id=user_id,
                 key="appointment_booking_defaults",
+                value=cleaned_defaults,
+                source="tool_result",
+                confidence=1.0,
+            )
+    if resolved_tool.name == "medical_purchase" and success:
+        defaults = {
+            "full_name": params.get("full_name"),
+            "email": params.get("email"),
+            "phone": params.get("phone"),
+            "session_key": ctx.session_key,
+            "updated_at": to_iso(utc_now()),
+        }
+        cleaned_defaults = {k: v for k, v in defaults.items() if v}
+        if cleaned_defaults:
+            container.memory.conversation.upsert_preference(
+                user_id=user_id,
+                key="medical_purchase_defaults",
                 value=cleaned_defaults,
                 source="tool_result",
                 confidence=1.0,
@@ -1731,8 +2493,9 @@ async def voice_transcribe(
     language_hint: str | None = Form(default=None),
     prompt: str | None = Form(default=None),
     authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
 ):
-    user_id = get_user_id(authorization)
+    user_id = resolve_user_id(authorization, x_user_id)
     ctx = _build_ctx(user_id=user_id, session_key=session_key)
     try:
         container.memory.guard.ensure_user_scope(user_id, user_id)
@@ -1817,8 +2580,9 @@ async def documents_analyze(
     file_category: str | None = Form(default=None),
     question: str | None = Form(default=None),
     authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
 ):
-    user_id = get_user_id(authorization)
+    user_id = resolve_user_id(authorization, x_user_id)
     ctx = _build_ctx(user_id=user_id, session_key=session_key)
     try:
         container.memory.guard.ensure_user_scope(user_id, user_id)
@@ -1972,8 +2736,12 @@ async def documents_analyze(
 
 
 @app.post("/chat/stream")
-def chat_stream(payload: ChatRequest, authorization: str | None = Header(default=None)):
-    user_id = get_user_id(authorization)
+def chat_stream(
+    payload: ChatRequest,
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+):
+    user_id = resolve_user_id(authorization, x_user_id)
     client_context = payload.client_context or ClientContext()
     ctx = _build_ctx(
         user_id=user_id,
@@ -2023,7 +2791,21 @@ def chat_stream(payload: ChatRequest, authorization: str | None = Header(default
                 client_context.location_text,
                 context,
             )
-            reply = booking_reply or _assistant_reply(payload.message, context, payload.history)
+            fallback_reply = _assistant_reply(payload.message, context, payload.history)
+            if booking_reply:
+                reply = booking_reply
+            elif _needs_location_reprompt(payload.message, payload.history):
+                reply = (
+                    "I still need your city or ZIP code to continue nearby lab/clinic discovery. "
+                    "Share it and I will rank options."
+                )
+            else:
+                reply = _llm_chat_reply(
+                    message=payload.message,
+                    context=context,
+                    history=payload.history,
+                    fallback_reply=fallback_reply,
+                )
             if written_symptoms:
                 reply = (
                     f"I logged these symptoms to your active record: {', '.join(written_symptoms)}. "
