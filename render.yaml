@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: carepilot-backend
+    runtime: docker
+    dockerContext: .
+    dockerfilePath: backend/Dockerfile
