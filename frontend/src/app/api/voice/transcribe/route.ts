@@ -105,9 +105,11 @@ export async function POST(req: NextRequest) {
   const languageHint = asNonEmptyString(formData.get("language_hint"));
   const sessionKey = asNonEmptyString(formData.get("session_key"));
 
+  let userId: string | null = null;
   if (idToken) {
     try {
-      await getAdminAuth().verifyIdToken(idToken);
+      const decoded = await getAdminAuth().verifyIdToken(idToken);
+      userId = decoded.uid;
     } catch {
       // Invalid tokens are forwarded; backend remains source of truth.
     }
@@ -120,6 +122,7 @@ export async function POST(req: NextRequest) {
     Accept: "application/json",
   };
   if (idToken) headers.Authorization = `Bearer ${idToken}`;
+  if (userId) headers["X-User-Id"] = userId;
   const upstream = await fetch(joinUrl(backendUrl, upstreamPath), {
     method: "POST",
     headers,

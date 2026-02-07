@@ -5,11 +5,7 @@ Date: 2026-02-07
 Authoring basis:
 - `/Users/charleszheng/Desktop/Tartan2026/CAREPILOT_PRODUCT_DESCRIPTION.md`
 - `/Users/charleszheng/Desktop/Tartan2026/doctor_agent_hackathon_strategy_and_openclaw_reuse.md`
-- OpenClaw codebase at `/Users/charleszheng/Desktop/Tartan2026/app`
-
-> Note (current repo state): references to `/app/...` in this document are historical
-> OpenClaw design anchors. Active runtime code for this repo is in `backend/` and
-> `frontend/`. Do not treat `/app` as the current execution path.
+- OpenClaw codebase at `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics`
 
 ## 1. Goal and Scope
 
@@ -85,30 +81,30 @@ flowchart LR
 
 Core OpenClaw integration points to reuse:
 - Tool orchestration and filtering:
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/agents/pi-tools.ts`
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/agents/pi-tools.policy.ts`
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/agents/tool-policy.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/agents/pi-tools.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/agents/pi-tools.policy.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/agents/tool-policy.ts`
 - Pre-tool policy enforcement hook:
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/agents/pi-tools.before-tool-call.ts`
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/plugins/hooks.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/agents/pi-tools.before-tool-call.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/plugins/hooks.ts`
 - Proactive runtime:
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/infra/heartbeat-runner.ts`
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/cron/service.ts`
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/agents/tools/cron-tool.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/infra/heartbeat-runner.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/cron/service.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/agents/tools/cron-tool.ts`
 - Conversational memory primitives:
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/agents/tools/memory-tool.ts`
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/memory/manager.ts`
-  - `/Users/charleszheng/Desktop/Tartan2026/app/extensions/memory-lancedb/index.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/agents/tools/memory-tool.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/memory/manager.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/extensions/memory-lancedb/index.ts`
 - Session routing containment:
-  - `/Users/charleszheng/Desktop/Tartan2026/app/src/sessions/send-policy.ts`
+  - `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/src/sessions/send-policy.ts`
 
 ### 3.3 New CarePilot Extension
 
 Create a new plugin:
-- `/Users/charleszheng/Desktop/Tartan2026/app/extensions/carepilot/openclaw.plugin.json`
-- `/Users/charleszheng/Desktop/Tartan2026/app/extensions/carepilot/index.ts`
-- `/Users/charleszheng/Desktop/Tartan2026/app/extensions/carepilot/config.ts`
-- `/Users/charleszheng/Desktop/Tartan2026/app/extensions/carepilot/README.md`
+- `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/extensions/carepilot/openclaw.plugin.json`
+- `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/extensions/carepilot/index.ts`
+- `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/extensions/carepilot/config.ts`
+- `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/extensions/carepilot/README.md`
 
 Internal module layout:
 - `tools/`:
@@ -1121,7 +1117,7 @@ Each action receipt includes:
 ### 14.1 Unit Tests
 
 Add tests under:
-- `/Users/charleszheng/Desktop/Tartan2026/app/extensions/carepilot/**/*.test.ts`
+- `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics/extensions/carepilot/**/*.test.ts`
 
 Critical unit suites:
 - triage classification edge cases,
@@ -1159,7 +1155,7 @@ Scripted scenario tests:
 
 ### 15.1 Local Run
 
-1. install deps: `pnpm install` in `/Users/charleszheng/Desktop/Tartan2026/app`.
+1. install deps: `pnpm install` in `/Users/charleszheng/Desktop/Tartan2026/random shit/feet pics`.
 2. enable plugin in config.
 3. run gateway dev mode.
 4. run CarePilot web UI (full app surface) against the gateway APIs.
@@ -1263,3 +1259,16 @@ Locked decisions based on product direction:
 13. Product surface: full web app UI.
 14. Privacy controls: include export/delete via settings UI actions (not chat commands).
 15. Memory strategy: use current planned memory stack now, then migrate to teammate-provided new memory system with phased cutover.
+
+## 18. Non-Ambiguity Checklist
+
+This design is implementation-ready because it specifies:
+- exact plugin/module/file layout,
+- exact tools and hook boundaries,
+- exact state machines and guard conditions,
+- exact table-level schema and data lifecycle,
+- exact policy enforcement points,
+- exact locked defaults for product tradeoffs,
+- exact test and observability coverage.
+
+The implementation plan can be generated directly as tickets without redefining architecture.

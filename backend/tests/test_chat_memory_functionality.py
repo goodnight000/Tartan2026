@@ -59,3 +59,18 @@ def test_chat_memory_query_reads_back_written_context(client, auth_headers):
     text = _token_text(events).lower()
     assert "active symptoms" in text
     assert "dizziness" in text or "nausea" in text
+
+
+def test_symptom_reply_includes_possible_causes_and_uncertainty(client, auth_headers):
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("I have headache, dizziness, and nausea."),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    text = _token_text(events).lower()
+    assert "possible causes" in text
+    assert "can't diagnose" in text
+    assert "not a diagnosis" in text
+    assert "headache" in text

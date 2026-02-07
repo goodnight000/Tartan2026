@@ -116,6 +116,46 @@ def test_lab_discovery_uses_location_in_user_message_when_context_missing(client
     assert "pittsburgh" in str(plan["params"]["zip_or_geo"]).lower()
 
 
+def test_lab_discovery_accepts_city_state_location_format(client, auth_headers):
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("find a blood test lab in Pittsburgh, PA", location_text=None),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    plan = _first_action_plan(events)
+    assert plan is not None
+    assert plan["tool"] == "lab_clinic_discovery"
+    assert "pittsburgh, pa" in str(plan["params"]["zip_or_geo"]).lower()
+
+
+def test_zip_only_followup_after_location_prompt_creates_lab_discovery_action_plan(client, auth_headers):
+    history = [
+        {"role": "user", "content": "can you help me book a blood test next week?"},
+        {
+            "role": "assistant",
+            "content": (
+                "I can help book that using live nearby discovery, but I need your location first. "
+                "Share your city or ZIP code, and I will find and rank real labs/clinics."
+            ),
+        },
+    ]
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("15289", history=history, location_text=None),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    text = _token_text(events).lower()
+    assert "find and rank nearby labs/clinics" in text
+    plan = _first_action_plan(events)
+    assert plan is not None
+    assert plan["tool"] == "lab_clinic_discovery"
+    assert str(plan["params"]["zip_or_geo"]) == "15289"
+
+
 def test_followup_first_option_creates_booking_action_plan(client, auth_headers):
     history = [
         {"role": "user", "content": "can you help me book a blood test next week?"},
@@ -143,6 +183,210 @@ def test_followup_first_option_creates_booking_action_plan(client, auth_headers)
     assert plan is not None
     assert plan["tool"] == "appointment_book"
     assert "quest diagnostics" in plan["params"]["provider_name"].lower()
+
+
+def test_followup_open_numeric_option_creates_booking_action_plan(client, auth_headers):
+    history = [
+        {"role": "user", "content": "can you help me book a blood test next week?"},
+        {
+            "role": "assistant",
+            "content": (
+                "Found 5 result(s):\n"
+                "1. Quest Diagnostics — local area\n"
+                "2. Riverside Clinic Lab — local area\n"
+                "3. Labcorp Midtown — local area\n"
+            ),
+        },
+    ]
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("open 1 is good", history=history),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    plan = _first_action_plan(events)
+    assert plan is not None
+    assert plan["tool"] == "appointment_book"
+    assert "quest diagnostics" in plan["params"]["provider_name"].lower()
+
+
+def test_booking_action_plan_mode_follows_external_web_flag(client, auth_headers, monkeypatch):
+    history = [
+        {"role": "user", "content": "can you help me book a blood test next week?"},
+        {
+            "role": "assistant",
+            "content": json.dumps(
+                {
+                    "result": {
+                        "items": [
+                            {
+                                "name": "Quest Diagnostics",
+                                "address": "Pittsburgh",
+                                "source_url": "https://example.com/booking",
+                            },
+                            {
+                                "name": "Riverside Clinic Lab",
+                                "address": "Pittsburgh",
+                                "source_url": "https://example.com/riverside",
+                            },
+                        ]
+                    }
+                }
+            ),
+        },
+    ]
+    monkeypatch.setenv("CAREPILOT_DISABLE_EXTERNAL_WEB", "false")
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload(
+            "first option looks good. my name is Jane Doe. email jane@example.com phone 4125551212",
+            history=history,
+        ),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    plan = _first_action_plan(events)
+    assert plan is not None
+    assert plan["tool"] == "appointment_book"
+    assert str(plan["params"]["mode"]) == "live"
+
+
+def test_medical_purchase_intent_builds_action_plan(client, auth_headers):
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("buy a medical test kit from https://example.com/kit"),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    plan = _first_action_plan(events)
+    assert plan is not None
+    assert plan["tool"] == "medical_purchase"
+    assert "kit" in plan["params"]["item_name"].lower()
+    assert str(plan["params"]["purchase_url"]).startswith("https://")
+
+
+def test_followup_option_sanitizes_invalid_location_label(client, auth_headers):
+    history = [
+        {"role": "user", "content": "can you help me book a blood test next week?"},
+        {
+            "role": "assistant",
+            "content": (
+                "Found 5 result(s):\n"
+                "1. Quest Diagnostics — hello\n"
+                "2. Riverside Clinic Lab — hello\n"
+            ),
+        },
+    ]
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("first option", history=history),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    plan = _first_action_plan(events)
+    assert plan is not None
+    assert plan["tool"] == "appointment_book"
+    assert "hello" not in plan["params"]["location"].lower()
+    assert "local area" in plan["params"]["location"].lower()
+
+
+def test_greeting_after_location_prompt_does_not_trigger_lab_discovery(client, auth_headers):
+    history = [
+        {"role": "user", "content": "can you help me book a blood test next week?"},
+        {
+            "role": "assistant",
+            "content": (
+                "I can help book that using live nearby discovery, but I need your location first. "
+                "Share your city or ZIP code, and I will find and rank real labs/clinics."
+            ),
+        },
+    ]
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("hello", history=history, location_text=None),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    text = _token_text(events).lower()
+    assert "city or zip" in text
+    assert not _has_action_plan(events)
+
+
+def test_off_topic_message_clears_active_booking_draft(client, auth_headers):
+    client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("Can you book an appointment for me?"),
+    )
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("I don't feel too good"),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    text = _token_text(events).lower()
+    assert "which provider to book with" not in text
+
+
+def test_hello_clears_active_booking_draft(client, auth_headers):
+    client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("Can you book an appointment for me?"),
+    )
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("hello"),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    text = _token_text(events).lower()
+    assert "which provider to book with" not in text
+
+
+def test_chat_stream_uses_llm_reply_path_when_available(client, auth_headers, backend_module, monkeypatch):
+    def fake_llm_reply(**_: dict) -> str:
+        return "This came from the live LLM path."
+
+    monkeypatch.setattr(backend_module, "_llm_chat_reply", fake_llm_reply)
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("hello"),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    text = _token_text(events)
+    assert "live LLM path" in text
+
+
+def test_chat_stream_can_use_anthropic_provider_path(client, auth_headers, backend_module, monkeypatch):
+    monkeypatch.setattr(
+        backend_module,
+        "_chat_provider_candidates",
+        lambda: [{"provider": "anthropic", "base_url": "https://api.anthropic.com/v1", "api_key": "k", "model": "m"}],
+    )
+    monkeypatch.setattr(
+        backend_module,
+        "_anthropic_chat",
+        lambda **_: "This came from Anthropic Claude.",
+    )
+    response = client.post(
+        "/chat/stream",
+        headers=auth_headers("user-a"),
+        json=_chat_payload("how are you"),
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    text = _token_text(events)
+    assert "Anthropic Claude" in text
 
 
 def test_followup_first_option_uses_session_memory_when_history_missing(client, auth_headers):

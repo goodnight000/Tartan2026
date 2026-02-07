@@ -111,3 +111,32 @@ def test_invalid_session_key_is_rejected(client, auth_headers):
     assert error_events
     error_payload = json.loads(error_events[0]["data"])
     assert "session" in error_payload["message"].lower()
+
+
+def test_x_user_id_header_takes_precedence_over_authorization(client):
+    mixed_headers = {"Authorization": "Bearer auth-user-a", "X-User-Id": "trusted-user-a"}
+    trusted_headers = {"Authorization": "Bearer another-user", "X-User-Id": "trusted-user-a"}
+
+    profile_write = client.post(
+        "/profile",
+        headers=mixed_headers,
+        json={"conditions": ["migraine"]},
+    )
+    assert profile_write.status_code == 200
+
+    symptom_write = client.post(
+        "/symptoms",
+        headers=mixed_headers,
+        json={"symptom_text": "cough", "severity": 2},
+    )
+    assert symptom_write.status_code == 200
+
+    trusted_profile = client.get("/profile", headers=trusted_headers).json()
+    assert trusted_profile["user_id"] == "trusted-user-a"
+    assert trusted_profile["conditions"] == ["migraine"]
+
+    trusted_logs = client.get("/logs/symptoms", headers=trusted_headers).json()["items"]
+    assert [entry["symptom_text"] for entry in trusted_logs] == ["cough"]
+
+    auth_profile = client.get("/profile", headers={"Authorization": "Bearer auth-user-a"}).json()
+    assert auth_profile == {}
