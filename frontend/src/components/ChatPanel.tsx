@@ -635,7 +635,7 @@ export function ChatPanel() {
           <div
             ref={chatContainerRef}
             onScroll={handleChatScroll}
-            className="max-h-[56vh] space-y-3 overflow-y-auto rounded-2xl border border-[color:var(--cp-line)] bg-[color:var(--cp-surface)]/70 p-3"
+            className="min-h-[56vh] max-h-[72vh] space-y-3 overflow-y-auto rounded-2xl border border-[color:var(--cp-line)] bg-[color:var(--cp-surface)]/70 p-3"
             role="log"
             aria-live="polite"
             aria-relevant="additions"
@@ -783,40 +783,8 @@ export function ChatPanel() {
         )}
 
         {/* Unified composer */}
-        <div className="space-y-2 rounded-2xl border border-[color:var(--cp-line)] bg-white/78 p-2">
-          <div className="flex items-end gap-2">
-            <div ref={attachmentAreaRef} className="relative shrink-0">
-              <Button
-                type="button"
-                size="icon"
-                variant={attachmentMenuOpen ? "outline" : "ghost"}
-                onClick={() => setAttachmentMenuOpen((open) => !open)}
-                aria-haspopup="true"
-                aria-expanded={attachmentMenuOpen}
-                aria-controls={attachmentMenuOpen ? ATTACHMENT_POPOVER_ID : undefined}
-                aria-label="Add attachment"
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-              </Button>
-              {attachmentMenuOpen && (
-                <div
-                  id={ATTACHMENT_POPOVER_ID}
-                  className="absolute bottom-12 left-0 z-20 w-56 rounded-xl border border-[color:var(--cp-line)] bg-white p-1 shadow-xl"
-                >
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[color:var(--cp-text)] hover:bg-[color:var(--cp-surface)]"
-                    onClick={() => {
-                      setUploadPanelOpen(true);
-                      setAttachmentMenuOpen(false);
-                    }}
-                  >
-                    <Upload className="h-4 w-4 text-[color:var(--cp-muted)]" aria-hidden="true" />
-                    Upload medical file
-                  </button>
-                </div>
-              )}
-            </div>
+        <div className="space-y-2 rounded-2xl border border-[color:var(--cp-line)] bg-white/80 p-3 shadow-sm backdrop-blur">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <textarea
               ref={textareaRef}
               placeholder="Ask CarePilot..."
@@ -829,39 +797,73 @@ export function ChatPanel() {
                 }
               }}
               rows={1}
-              className="flex-1 resize-none rounded-2xl border border-[color:var(--cp-line)] bg-white/75 px-4 py-2.5 text-sm text-[color:var(--cp-text)] placeholder:text-[color:var(--cp-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--cp-primary)] focus-visible:ring-offset-2"
+              className="chat-textarea min-h-[44px] w-full flex-1 resize-none rounded-2xl border border-[color:var(--cp-line)] bg-white/80 px-4 py-3 text-sm text-[color:var(--cp-text)] placeholder:text-[color:var(--cp-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--cp-primary)] focus-visible:ring-offset-2 sm:min-h-[48px]"
               aria-label="Chat message input"
             />
-            <VoiceInputButton
-              className="shrink-0"
-              sessionKey={sessionKey}
-              showStatusText={false}
-              onStatusChange={setVoiceStatus}
-              onTranscript={(text) => {
-                setInput((current) => (current.trim() ? `${current.trimEnd()} ${text}` : text));
-                textareaRef.current?.focus();
-              }}
-            />
-            {pending && (
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+              <div ref={attachmentAreaRef} className="relative">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={attachmentMenuOpen ? "outline" : "ghost"}
+                  onClick={() => setAttachmentMenuOpen((open) => !open)}
+                  aria-haspopup="true"
+                  aria-expanded={attachmentMenuOpen}
+                  aria-controls={attachmentMenuOpen ? ATTACHMENT_POPOVER_ID : undefined}
+                  aria-label="Add attachment"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                </Button>
+                {attachmentMenuOpen && (
+                  <div
+                    id={ATTACHMENT_POPOVER_ID}
+                    className="absolute bottom-12 left-0 z-20 w-48 rounded-xl border border-[color:var(--cp-line)] bg-white p-1 shadow-xl"
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[color:var(--cp-text)] hover:bg-[color:var(--cp-surface)]"
+                      onClick={() => {
+                        setUploadPanelOpen(true);
+                        setAttachmentMenuOpen(false);
+                      }}
+                    >
+                      <Upload className="h-4 w-4 text-[color:var(--cp-muted)]" aria-hidden="true" />
+                      Upload medical file
+                    </button>
+                  </div>
+                )}
+              </div>
+              <VoiceInputButton
+                className="shrink-0"
+                sessionKey={sessionKey}
+                showStatusText={false}
+                onStatusChange={setVoiceStatus}
+                onTranscript={(text) => {
+                  setInput((current) => (current.trim() ? `${current.trimEnd()} ${text}` : text));
+                  textareaRef.current?.focus();
+                }}
+              />
+              {pending && (
+                <Button
+                  type="button"
+                  onClick={handleCancelStream}
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Cancel response"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              )}
               <Button
-                type="button"
-                onClick={handleCancelStream}
-                variant="ghost"
+                onClick={handleSend}
+                disabled={!input.trim()}
+                loading={pending && runState === "connecting"}
                 size="icon"
-                aria-label="Cancel response"
+                aria-label="Send message"
               >
-                <X className="h-4 w-4" aria-hidden="true" />
+                <Send className="h-4 w-4" aria-hidden="true" />
               </Button>
-            )}
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim()}
-              loading={pending && runState === "connecting"}
-              size="icon"
-              aria-label="Send message"
-            >
-              <Send className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-[color:var(--cp-muted)]">
             <span>Press Enter to send. Shift+Enter for a new line.</span>

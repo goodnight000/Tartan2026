@@ -454,6 +454,28 @@ pre,
   animation: floatIn 540ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
 }
 
+/* ── Chat textarea scrollbar ── */
+.chat-textarea {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--cp-primary) 35%, white 65%) transparent;
+}
+
+.chat-textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-textarea::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.chat-textarea::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--cp-primary) 35%, white 65%);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
 @keyframes nameRefresh {
   0% {
     transform: translateY(8px);
