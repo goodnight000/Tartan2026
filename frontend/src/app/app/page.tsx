@@ -49,6 +49,42 @@ function parseHour(value?: string | null): number | null {
   return Number.isFinite(hour) ? hour : null;
 }
 
+function canUseNotifications(): boolean {
+  return typeof window !== "undefined" && "Notification" in window;
+}
+
+async function ensureNotificationPermission(): Promise<NotificationPermission> {
+  if (!canUseNotifications()) return "denied";
+  if (Notification.permission !== "default") return Notification.permission;
+  return Notification.requestPermission();
+}
+
+function notify(title: string, body: string) {
+  if (!canUseNotifications()) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    new Notification(title, { body });
+  } catch {
+    // ignore notification errors
+  }
+}
+
+function todayKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function shouldNotifyOnce(key: string, value: string): boolean {
+  if (typeof window === "undefined") return false;
+  const storageKey = `carepilot.notify.${key}`;
+  const last = window.localStorage.getItem(storageKey);
+  if (last === value) return false;
+  window.localStorage.setItem(storageKey, value);
+  return true;
+}
+
 const signalSeed: HealthSignal[] = [
   {
     id: "cycle",
@@ -262,6 +298,50 @@ export default function AppPage() {
     : snoozeActive
       ? `Snoozed until ${snoozedUntil?.toLocaleDateString()}.`
       : "Proactive nudges are enabled.";
+
+  useEffect(() => {
+    const reminderSettings = profileQuery.data?.reminders;
+    if (!user || !reminderSettings) return;
+    if (paused || snoozeActive || isQuietHours) return;
+    if (!canUseNotifications()) return;
+
+    const run = async () => {
+      const permission = await ensureNotificationPermission();
+      if (permission !== "granted") return;
+
+      const reminders = remindersQuery.data?.refill_reminders ?? [];
+      for (const reminder of reminders) {
+        const medName = reminder.med_name || "Medication";
+        const daysLeft = reminder.days_left;
+        const dueKey = `${medName}:${daysLeft}`;
+        if (!shouldNotifyOnce(`${user.uid}.med_refill.${medName}`, dueKey)) continue;
+        const body =
+          daysLeft <= 0
+            ? `${medName} refill is overdue. Consider refilling now.`
+            : `${medName} refill due in ${daysLeft} day(s).`;
+        notify("Refill reminder", body);
+      }
+
+      if (
+        reminderSettings.checkup_due &&
+        reminderSettings.reminder_mode !== "medications_only"
+      ) {
+        const dailyKey = `${user.uid}.checkup_due.${todayKey()}`;
+        if (shouldNotifyOnce(dailyKey, "1")) {
+          notify("Checkup reminder", "A routine checkup is due. Schedule when ready.");
+        }
+      }
+    };
+
+    void run();
+  }, [
+    isQuietHours,
+    paused,
+    profileQuery.data?.reminders,
+    remindersQuery.data?.refill_reminders,
+    snoozeActive,
+    user,
+  ]);
 
   const topPriority = useMemo(() => {
     const first = remindersQuery.data?.refill_reminders?.[0];
