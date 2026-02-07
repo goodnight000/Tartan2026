@@ -40,6 +40,13 @@ function getGreeting(): { text: string; icon: typeof Sun } {
   return { text: "Good evening", icon: Moon };
 }
 
+function parseHour(value?: string | null): number | null {
+  if (!value) return null;
+  const [hourString] = value.split(":");
+  const hour = Number(hourString);
+  return Number.isFinite(hour) ? hour : null;
+}
+
 const signalSeed: HealthSignal[] = [
   {
     id: "cycle",
@@ -86,6 +93,9 @@ export default function AppPage() {
   const [pending, setPending] = useState(false);
   const [paused, setPaused] = useState(false);
   const [medOnly, setMedOnly] = useState(false);
+  const [snoozedUntil, setSnoozedUntil] = useState<Date | null>(null);
+  const [now, setNow] = useState(() => new Date());
+  const [namePulse, setNamePulse] = useState(0);
   const triageLevel = useChatStore((s) => s.triageLevel);
 
   const form = useForm<SymptomValues>({
@@ -98,6 +108,11 @@ export default function AppPage() {
       router.push("/login");
     }
   }, [loading, router, user]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const profileQuery = useQuery({
     queryKey: ["profile", user?.uid],
@@ -152,6 +167,12 @@ export default function AppPage() {
     },
   });
 
+  useEffect(() => {
+    if (!profileQuery.data?.reminders) return;
+    setPaused(profileQuery.data.reminders.proactive_state === "paused");
+    setMedOnly(profileQuery.data.reminders.reminder_mode === "medications_only");
+  }, [profileQuery.data?.reminders]);
+
   const medCards: MedicationCardData[] = useMemo(() => {
     if (!profileQuery.data?.meds) return [];
     return profileQuery.data.meds
@@ -170,7 +191,11 @@ export default function AppPage() {
         return {
           name: med.name ?? "Unknown",
           dose: med.dose ?? "N/A",
-          frequency: `${med.frequency_per_day}x/day`,
+          frequency: med.cadence
+            ? med.cadence.replace(/_/g, " ")
+            : med.frequency_per_day
+              ? `${med.frequency_per_day}x/day`
+              : "as directed",
           status,
           adherenceStreak: Array.from({ length: 7 }, (_, i) => {
             // Deterministic per-medication streak based on name + day index
@@ -202,6 +227,39 @@ export default function AppPage() {
   };
 
   const greeting = getGreeting();
+  const firstName = profileQuery.data?.demographics?.first_name?.trim();
+  useEffect(() => {
+    if (firstName) setNamePulse((prev) => prev + 1);
+  }, [firstName, profileQuery.dataUpdatedAt]);
+  const greetingText = firstName ? (
+    <span>
+      {greeting.text},{" "}
+      <span key={`${firstName}-${namePulse}`} className="name-refresh font-semibold">
+        {firstName}
+      </span>
+    </span>
+  ) : (
+    greeting.text
+  );
+  const reminderSettings = profileQuery.data?.reminders;
+  const quietStart = reminderSettings?.quiet_hours?.start ?? "22:00";
+  const quietEnd = reminderSettings?.quiet_hours?.end ?? "08:00";
+  const quietStartHour = parseHour(quietStart) ?? 22;
+  const quietEndHour = parseHour(quietEnd) ?? 8;
+  const quietHoursWindow = { startHour: quietStartHour, endHour: quietEndHour };
+  const isQuietHours =
+    now.getHours() >= quietHoursWindow.startHour || now.getHours() < quietHoursWindow.endHour;
+  const snoozeActive = snoozedUntil ? snoozedUntil.getTime() > now.getTime() : false;
+  const proactiveStatus = paused
+    ? "Paused"
+    : snoozeActive
+      ? "Snoozed"
+      : "Active";
+  const proactiveStatusDetail = paused
+    ? "No proactive nudges while paused."
+    : snoozeActive
+      ? `Snoozed until ${snoozedUntil?.toLocaleDateString()}.`
+      : "Proactive nudges are enabled.";
 
   const topPriority = useMemo(() => {
     const first = remindersQuery.data?.refill_reminders?.[0];
@@ -215,14 +273,8 @@ export default function AppPage() {
       <Card className="reveal space-y-4 p-7">
         <PageHeader
           eyebrow="Command Center"
-          title={`${greeting.text}`}
+          title={greetingText}
           subtitle={topPriority}
-          chips={
-            <>
-              <span className="status-chip status-chip--danger">Triage Live</span>
-              <span className="status-chip status-chip--info">Actions Consent-Gated</span>
-            </>
-          }
         />
         {triageLevel && (
           <TriageCard
@@ -243,26 +295,41 @@ export default function AppPage() {
             }
           />
         )}
-        <div className="grid gap-3 md:grid-cols-3">
-          <Button variant={paused ? "outline" : "default"} onClick={() => setPaused((prev) => !prev)}>
-            {paused ? "Resume Proactive" : "Pause Proactive"}
-          </Button>
-          <Button variant={medOnly ? "default" : "outline"} onClick={() => setMedOnly((prev) => !prev)}>
-            {medOnly ? "Medication-Only Active" : "Enable Medication-Only"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => push({ title: "Snoozed", description: "Proactive nudges snoozed for 3 days.", variant: "info" })}
-          >
-            Snooze 3 Days
-          </Button>
-        </div>
       </Card>
 
-      {/* 3-column layout */}
-      <div className="grid gap-4 xl:grid-cols-[330px_minmax(0,1fr)_340px]">
-        {/* Left sidebar */}
-        <aside className="space-y-4" aria-label="Symptom check-in and proactive rules">
+      {/* Primary layout */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-4">
+          {/* Center - Chat */}
+          <section className="reveal" style={{ animationDelay: "120ms" }}>
+            <ChatPanel />
+          </section>
+
+          {/* Health signals */}
+          <Card
+            id="signals"
+            className="reveal space-y-4 p-6"
+            style={{ animationDelay: "210ms" }}
+            role="region"
+            aria-label="Health signals dashboard"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="editorial-eyebrow">Health Signals Dashboard</p>
+                <h2 className="text-4xl leading-none">Connected Metrics</h2>
+              </div>
+              <span className="status-chip status-chip--success">Apple Health Linked</span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {signalSeed.map((signal) => (
+                <MetricCard key={signal.id} signal={signal} />
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        {/* Right rail */}
+        <aside className="space-y-4" aria-label="Daily check-in, proactive rules, and medications">
           <Card className="reveal space-y-4 p-5" style={{ animationDelay: "70ms" }}>
             <div>
               <p className="editorial-eyebrow">Quick Intake</p>
@@ -311,8 +378,20 @@ export default function AppPage() {
             </div>
             <div className="space-y-2 text-sm text-[color:var(--cp-muted)]">
               <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
+                <span>Status</span>
+                <span className="font-mono text-xs">{proactiveStatus}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
                 <span>Quiet hours</span>
-                <span className="font-mono text-xs">10:00 PM - 8:00 AM</span>
+                <span className="font-mono text-xs">
+                  {quietStart} - {quietEnd} {isQuietHours ? "(Active)" : "(Inactive)"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
+                <span>Snooze</span>
+                <span className="font-mono text-xs">
+                  {snoozeActive ? `Until ${snoozedUntil?.toLocaleDateString()}` : "Off"}
+                </span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2">
                 <span>Non-urgent limit</span>
@@ -323,16 +402,9 @@ export default function AppPage() {
                 <span className="font-mono text-xs">{medOnly ? "Medication Only" : "All"}</span>
               </div>
             </div>
+            <p className="text-xs text-[color:var(--cp-muted)]">{proactiveStatusDetail}</p>
           </Card>
-        </aside>
 
-        {/* Center - Chat */}
-        <section className="reveal" style={{ animationDelay: "120ms" }}>
-          <ChatPanel />
-        </section>
-
-        {/* Right sidebar */}
-        <aside className="space-y-4" aria-label="Medication forecast and health plan">
           {/* Medication cards */}
           <Card className="reveal space-y-3 p-5" style={{ animationDelay: "150ms" }}>
             <div>
@@ -372,82 +444,7 @@ export default function AppPage() {
               />
             )}
           </Card>
-
-          {/* Health plan */}
-          <Card className="reveal space-y-3 p-5" style={{ animationDelay: "190ms" }}>
-            <div>
-              <p className="editorial-eyebrow">7-Day Protocol</p>
-              <h3 className="text-2xl leading-none">AI Health Plan</h3>
-            </div>
-            {planQuery.isLoading ? (
-              <SkeletonCard />
-            ) : planQuery.data ? (
-              <div className="space-y-3 text-sm text-[color:var(--cp-text)]">
-                <p className="text-[color:var(--cp-muted)]">{planQuery.data.summary}</p>
-                {planQuery.data.days.slice(0, 3).map((day) => (
-                  <div key={day.day} className="rounded-xl border border-[color:var(--cp-line)] bg-white/72 p-3">
-                    <div className="font-semibold">{day.day}</div>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-[color:var(--cp-muted)]">
-                      {day.actions.map((action) => (
-                        <li key={action}>{action}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-[color:var(--cp-muted)]">Plan unavailable. Verify API key/config.</p>
-            )}
-          </Card>
-
-          {/* Action results */}
-          <Card className="reveal space-y-3 p-5" style={{ animationDelay: "220ms" }}>
-            <div>
-              <p className="editorial-eyebrow">Execution Ledger</p>
-              <h3 className="text-2xl leading-none">Latest Action</h3>
-            </div>
-            <ActionResults />
-          </Card>
         </aside>
-      </div>
-
-      {/* Health signals */}
-      <Card id="signals" className="reveal space-y-4 p-6" style={{ animationDelay: "240ms" }} role="region" aria-label="Health signals dashboard">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="editorial-eyebrow">Health Signals Dashboard</p>
-            <h2 className="text-4xl leading-none">Connected Metrics</h2>
-          </div>
-          <span className="status-chip status-chip--success">Apple Health Linked</span>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {signalSeed.map((signal) => (
-            <MetricCard key={signal.id} signal={signal} />
-          ))}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function ActionResults() {
-  const result = useChatStore((state) => state.actionResult);
-  if (!result) {
-    return <p className="text-sm text-[color:var(--cp-muted)]">No transactional action executed yet.</p>;
-  }
-
-  return (
-    <div className="space-y-2 rounded-2xl border border-[color:var(--cp-line)] bg-white/75 p-3">
-      <div className={`status-chip ${result.status === "success" ? "status-chip--success" : "status-chip--danger"}`}>
-        {result.status}
-      </div>
-      <div className="space-y-1">
-        {Object.entries(result.result ?? {}).map(([key, val]) => (
-          <div key={key} className="flex justify-between text-xs">
-            <span className="font-medium text-[color:var(--cp-muted)]">{key.replace(/_/g, " ")}</span>
-            <span className="text-[color:var(--cp-text)]">{typeof val === "object" && val !== null ? JSON.stringify(val) : String(val ?? "")}</span>
-          </div>
-        ))}
       </div>
     </div>
   );

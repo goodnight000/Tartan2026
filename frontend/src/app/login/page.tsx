@@ -43,7 +43,12 @@ export default function LoginPage() {
       const result = await signInWithEmailAndPassword(auth, email, password);
       const profile = await getProfile(result.user.uid);
       push({ title: "Welcome back", variant: "success" });
-      router.push(profile ? "/app" : "/onboarding");
+      if (profile?.onboarding?.completed) {
+        router.push("/app");
+      } else {
+        push({ title: "Finish your profile", description: "Complete details in the Trust Center.", variant: "info" });
+        router.push("/profile");
+      }
     } catch (error) {
       push({ title: "Login Failed", description: (error as Error).message, variant: "error" });
     } finally {
