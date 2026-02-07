@@ -95,6 +95,7 @@ export default function AppPage() {
   const [medOnly, setMedOnly] = useState(false);
   const [snoozedUntil, setSnoozedUntil] = useState<Date | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const [namePulse, setNamePulse] = useState(0);
   const triageLevel = useChatStore((s) => s.triageLevel);
 
   const form = useForm<SymptomValues>({
@@ -226,6 +227,20 @@ export default function AppPage() {
   };
 
   const greeting = getGreeting();
+  const firstName = profileQuery.data?.demographics?.first_name?.trim();
+  useEffect(() => {
+    if (firstName) setNamePulse((prev) => prev + 1);
+  }, [firstName, profileQuery.dataUpdatedAt]);
+  const greetingText = firstName ? (
+    <span>
+      {greeting.text},{" "}
+      <span key={`${firstName}-${namePulse}`} className="name-refresh font-semibold">
+        {firstName}
+      </span>
+    </span>
+  ) : (
+    greeting.text
+  );
   const reminderSettings = profileQuery.data?.reminders;
   const quietStart = reminderSettings?.quiet_hours?.start ?? "22:00";
   const quietEnd = reminderSettings?.quiet_hours?.end ?? "08:00";
@@ -258,7 +273,7 @@ export default function AppPage() {
       <Card className="reveal space-y-4 p-7">
         <PageHeader
           eyebrow="Command Center"
-          title={`${greeting.text}`}
+          title={greetingText}
           subtitle={topPriority}
         />
         {triageLevel && (

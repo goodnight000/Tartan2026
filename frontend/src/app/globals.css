@@ -453,3 +453,29 @@ pre,
 .reveal {
   animation: floatIn 540ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
 }
+
+@keyframes nameRefresh {
+  0% {
+    transform: translateY(8px);
+    opacity: 0.55;
+  }
+  55% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+  75% {
+    transform: translateY(3px);
+  }
+  90% {
+    transform: translateY(-1px);
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.name-refresh {
+  display: inline-block;
+  animation: nameRefresh 320ms cubic-bezier(0.15, 0.95, 0.2, 1) both;
+}

@@ -59,6 +59,7 @@ const schema = z.object({
     relationship: z.enum(["parent", "child", "spouse", "other"]).optional(),
   }),
   demographics: z.object({
+    first_name: z.string().max(40).optional(),
     year_of_birth: z.coerce.number().optional(),
     sex_assigned_at_birth: z.enum(["female", "male", "intersex", "prefer_not_to_say"]).optional(),
     height_cm: z.coerce.number().optional(),
@@ -161,6 +162,7 @@ const defaultValues: FormValues = {
     relationship: undefined,
   },
   demographics: {
+    first_name: "",
     year_of_birth: undefined,
     sex_assigned_at_birth: undefined,
     height_cm: undefined,
@@ -508,6 +510,9 @@ function buildPayload(
     },
     profile_mode: profileMode,
     demographics: {
+      first_name: writeProfileMode
+        ? normalizeText(values.demographics.first_name)
+        : existing?.demographics?.first_name,
       year_of_birth: writeBaseline
         ? values.demographics.year_of_birth
         : existing?.demographics?.year_of_birth,
@@ -621,7 +626,11 @@ export default function OnboardingPage() {
         case "consent_transparency":
           return Boolean(values.consent.health_data_use);
         case "profile_mode":
-          return Boolean(values.profile_mode.managing_for || values.profile_mode.dependent_label);
+          return Boolean(
+            values.profile_mode.managing_for ||
+            values.profile_mode.dependent_label ||
+            normalizeText(values.demographics.first_name)
+          );
         case "health_baseline":
           return (
             Boolean(values.demographics.year_of_birth) ||
@@ -730,6 +739,7 @@ export default function OnboardingPage() {
             relationship: profile.profile_mode?.relationship,
           },
           demographics: {
+            first_name: profile.demographics?.first_name ?? "",
             year_of_birth: profile.demographics?.year_of_birth,
             sex_assigned_at_birth: profile.demographics?.sex_assigned_at_birth,
             height_cm: profile.demographics?.height_cm,
@@ -1143,6 +1153,10 @@ export default function OnboardingPage() {
 
               {step.id === "profile_mode" && (
                 <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="first-name">First name</Label>
+                    <Input id="first-name" maxLength={40} placeholder="Jane" {...form.register("demographics.first_name")} />
+                  </div>
                   <div className="space-y-3">
                     <Label>Profile is for</Label>
                     <div className="grid gap-2 md:grid-cols-2">
