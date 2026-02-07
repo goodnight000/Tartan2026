@@ -409,41 +409,6 @@ export default function AppPage() {
             )}
           </Card>
 
-          {/* Health plan */}
-          <Card className="reveal space-y-3 p-5" style={{ animationDelay: "190ms" }}>
-            <div>
-              <p className="editorial-eyebrow">7-Day Protocol</p>
-              <h3 className="text-2xl leading-none">AI Health Plan</h3>
-            </div>
-            {planQuery.isLoading ? (
-              <SkeletonCard />
-            ) : planQuery.data ? (
-              <div className="space-y-3 text-sm text-[color:var(--cp-text)]">
-                <p className="text-[color:var(--cp-muted)]">{planQuery.data.summary}</p>
-                {planQuery.data.days.slice(0, 3).map((day) => (
-                  <div key={day.day} className="rounded-xl border border-[color:var(--cp-line)] bg-white/72 p-3">
-                    <div className="font-semibold">{day.day}</div>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-[color:var(--cp-muted)]">
-                      {day.actions.map((action) => (
-                        <li key={action}>{action}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-[color:var(--cp-muted)]">Plan unavailable. Verify API key/config.</p>
-            )}
-          </Card>
-
-          {/* Action results */}
-          <Card className="reveal space-y-3 p-5" style={{ animationDelay: "220ms" }}>
-            <div>
-              <p className="editorial-eyebrow">Execution Ledger</p>
-              <h3 className="text-2xl leading-none">Latest Action</h3>
-            </div>
-            <ActionResults />
-          </Card>
         </aside>
       </div>
 
@@ -462,29 +427,6 @@ export default function AppPage() {
           ))}
         </div>
       </Card>
-    </div>
-  );
-}
-
-function ActionResults() {
-  const result = useChatStore((state) => state.actionResult);
-  if (!result) {
-    return <p className="text-sm text-[color:var(--cp-muted)]">No transactional action executed yet.</p>;
-  }
-
-  return (
-    <div className="space-y-2 rounded-2xl border border-[color:var(--cp-line)] bg-white/75 p-3">
-      <div className={`status-chip ${result.status === "success" ? "status-chip--success" : "status-chip--danger"}`}>
-        {result.status}
-      </div>
-      <div className="space-y-1">
-        {Object.entries(result.result ?? {}).map(([key, val]) => (
-          <div key={key} className="flex justify-between text-xs">
-            <span className="font-medium text-[color:var(--cp-muted)]">{key.replace(/_/g, " ")}</span>
-            <span className="text-[color:var(--cp-text)]">{typeof val === "object" && val !== null ? JSON.stringify(val) : String(val ?? "")}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
