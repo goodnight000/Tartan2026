@@ -32,4 +32,3 @@ services:
     envVars:
       - key: BACKEND_URL
         value: https://carepilot-backend.onrender.com
-*** End Patch"}`
