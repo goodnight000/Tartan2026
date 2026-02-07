@@ -282,10 +282,39 @@ export default function AppPage() {
         )}
       </Card>
 
-      {/* 3-column layout */}
-      <div className="grid gap-4 xl:grid-cols-[330px_minmax(0,1fr)_340px]">
-        {/* Left sidebar */}
-        <aside className="space-y-4" aria-label="Symptom check-in and proactive rules">
+      {/* Primary layout */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-4">
+          {/* Center - Chat */}
+          <section className="reveal" style={{ animationDelay: "120ms" }}>
+            <ChatPanel />
+          </section>
+
+          {/* Health signals */}
+          <Card
+            id="signals"
+            className="reveal space-y-4 p-6"
+            style={{ animationDelay: "210ms" }}
+            role="region"
+            aria-label="Health signals dashboard"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="editorial-eyebrow">Health Signals Dashboard</p>
+                <h2 className="text-4xl leading-none">Connected Metrics</h2>
+              </div>
+              <span className="status-chip status-chip--success">Apple Health Linked</span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {signalSeed.map((signal) => (
+                <MetricCard key={signal.id} signal={signal} />
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        {/* Right rail */}
+        <aside className="space-y-4" aria-label="Daily check-in, proactive rules, and medications">
           <Card className="reveal space-y-4 p-5" style={{ animationDelay: "70ms" }}>
             <div>
               <p className="editorial-eyebrow">Quick Intake</p>
@@ -360,15 +389,7 @@ export default function AppPage() {
             </div>
             <p className="text-xs text-[color:var(--cp-muted)]">{proactiveStatusDetail}</p>
           </Card>
-        </aside>
 
-        {/* Center - Chat */}
-        <section className="reveal" style={{ animationDelay: "120ms" }}>
-          <ChatPanel />
-        </section>
-
-        {/* Right sidebar */}
-        <aside className="space-y-4" aria-label="Medication forecast and health plan">
           {/* Medication cards */}
           <Card className="reveal space-y-3 p-5" style={{ animationDelay: "150ms" }}>
             <div>
@@ -408,25 +429,8 @@ export default function AppPage() {
               />
             )}
           </Card>
-
         </aside>
       </div>
-
-      {/* Health signals */}
-      <Card id="signals" className="reveal space-y-4 p-6" style={{ animationDelay: "240ms" }} role="region" aria-label="Health signals dashboard">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="editorial-eyebrow">Health Signals Dashboard</p>
-            <h2 className="text-4xl leading-none">Connected Metrics</h2>
-          </div>
-          <span className="status-chip status-chip--success">Apple Health Linked</span>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {signalSeed.map((signal) => (
-            <MetricCard key={signal.id} signal={signal} />
-          ))}
-        </div>
-      </Card>
     </div>
   );
 }
