@@ -4,6 +4,7 @@ import {
   listRecords,
   putRecord,
 } from './database';
+import { syncRecordToCloud } from './cloud';
 import {
   decodeMasterKey,
   decryptValue,
@@ -50,6 +51,7 @@ export async function processCareBaseText(
         syncedAt: existing?.syncedAt,
       };
       await putRecord(record);
+      await syncRecordToCloud(record);
       responses.push(formatResponse(command.key, 'Success: stored'));
       continue;
     }

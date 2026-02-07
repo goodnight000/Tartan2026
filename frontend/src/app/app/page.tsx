@@ -498,3 +498,28 @@ export default function AppPage() {
     </div>
   );
 }
+
+function ActionResults() {
+  const result = useChatStore((state) => state.actionResult);
+  if (!result) {
+    return <p className="text-sm text-[color:var(--cp-muted)]">No transactional action executed yet.</p>;
+  }
+
+  return (
+    <div className="space-y-2 rounded-2xl border border-[color:var(--cp-line)] bg-white/75 p-3">
+      <div className={`status-chip ${result.status === "success" ? "status-chip--success" : "status-chip--danger"}`}>
+        {result.status}
+      </div>
+      <div className="space-y-1">
+        {Object.entries(result.result ?? {}).map(([key, val]) => (
+          <div key={key} className="flex justify-between text-xs">
+            <span className="font-medium text-[color:var(--cp-muted)]">{key.replace(/_/g, " ")}</span>
+            <span className="text-[color:var(--cp-text)]">
+              {typeof val === "object" && val !== null ? JSON.stringify(val) : String(val ?? "")}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

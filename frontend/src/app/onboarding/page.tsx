@@ -15,6 +15,7 @@ import { TagInput } from "@/components/TagInput";
 import { StepProgress } from "@/components/StepProgress";
 import { useToast } from "@/components/ui/toast";
 import { getProfile, upsertProfile } from "@/lib/firestore";
+import { pushAllToCloud } from "@/lib/carebase/cloud";
 import { useAuthUser } from "@/lib/useAuth";
 import type { MedicalProfile } from "@/lib/types";
 
@@ -904,7 +905,7 @@ export default function OnboardingPage() {
     return () => subscription.unsubscribe();
   }, [form, performSave, ready, step.id, trackEvent, user]);
 
-  const advanceStep = (skipped: boolean) => {
+  const advanceStep = async (values: FormValues, skipped: boolean) => {
     const duration = Date.now() - stepStartRef.current;
     trackEvent("onboarding_step_completed", {
       step_id: step.id,
@@ -917,7 +918,7 @@ export default function OnboardingPage() {
       setCompletedSteps((prev) => [...prev, step.id]);
     }
 
-    setSaving(true);
+    setSaveStatus("saving");
     const cleaned = {
       ...values,
       meds: values.meds.filter((med) => med.name?.trim()),
@@ -928,48 +929,37 @@ export default function OnboardingPage() {
     try {
       await upsertProfile(user.uid, cleaned);
 
-      let idToken: string;
       try {
-        idToken = await user.getIdToken();
-      } catch {
-        throw new Error(
-          "Profile saved locally, but backend sync could not verify your session. Please log in again."
-        );
-      }
-
-      const syncResponse = await fetch("/api/profile/upsert", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...cleaned,
-          timezone,
-          idToken,
-        }),
-      });
-      if (!syncResponse.ok) {
-        let detail = "Backend profile sync failed.";
-        try {
-          const payload = await syncResponse.json();
-          if (payload && typeof payload.message === "string" && payload.message.trim()) {
-            detail = payload.message.trim();
-          }
-        } catch {
-          // Ignore parse failures and keep generic fallback.
-        }
-        throw new Error(`Profile saved locally, but backend sync failed: ${detail}`);
+        await pushAllToCloud();
+      } catch (error) {
+        push({
+          title: "Local save complete",
+          description: "Cloud backup failed. You can retry from the Trust Center.",
+          variant: "warning",
+        });
       }
 
       if (typeof window !== "undefined") {
-        window.localStorage.removeItem(DRAFT_KEY);
+        window.localStorage.removeItem("carepilot.onboarding.draft");
       }
+    } catch (error) {
+      push({
+        title: "Sync failed",
+        description: error instanceof Error ? error.message : "Profile sync failed.",
+        variant: "error",
+      });
+      setSaveStatus("error");
+      return;
     }
     if (step.id === "review_confirm") {
       if (!reviewConfirmed) {
         push({ title: "Please confirm", description: "Check Looks good to continue.", variant: "warning" });
+        setSaveStatus("error");
         return;
       }
       if (!values.consent.health_data_use) {
         push({ title: "Consent required", description: "Consent is required to finish onboarding.", variant: "warning" });
+        setSaveStatus("error");
         return;
       }
       const totalDuration = Date.now() - onboardingStartRef.current;
@@ -984,22 +974,29 @@ export default function OnboardingPage() {
       setTimeout(() => {
         router.push("/app");
       }, 1200);
+      setSaveStatus("saved");
       return;
     }
 
     const saved = await performSave(values, { retry: true });
-    if (!saved) return;
-    advanceStep(false);
+    if (!saved) {
+      setSaveStatus("saved");
+      return;
+    }
+    setStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
+    setSaveStatus("saved");
   };
 
   const handleSkip = async () => {
     if (step.id === "reminders_controls") {
       form.setValue("reminders", DEFAULT_REMINDERS);
     }
-    const saved = await performSave(form.getValues(), { retry: true });
-    if (!saved) return;
-    advanceStep(true);
+    await advanceStep(form.getValues(), true);
   };
+
+  const handleContinue = form.handleSubmit(async (values) => {
+    await advanceStep(values, false);
+  });
 
   const toggleCondition = (name: string) => {
     const current = form.getValues("conditions");
