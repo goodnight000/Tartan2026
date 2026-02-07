@@ -1,7 +1,7 @@
 services:
   - type: web
     name: carepilot-backend
-    env: docker
+    runtime: docker
     dockerContext: .
     dockerfilePath: backend/Dockerfile
     autoDeploy: true
@@ -12,7 +12,7 @@ services:
 
   - type: web
     name: carepilot-carebase
-    env: docker
+    runtime: docker
     dockerContext: .
     dockerfilePath: carebase_server/Dockerfile
     autoDeploy: true
@@ -22,7 +22,7 @@ services:
 
   - type: web
     name: carepilot-frontend
-    env: docker
+    runtime: docker
     dockerContext: .
     dockerfilePath: frontend/Dockerfile
     autoDeploy: true
