@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { useId, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -9,7 +10,7 @@ export function TagInput({
   label,
   value,
   onChange,
-  placeholder
+  placeholder,
 }: {
   label: string;
   value: string[];
@@ -17,6 +18,7 @@ export function TagInput({
   placeholder?: string;
 }) {
   const [input, setInput] = useState("");
+  const inputId = useId();
 
   const addTag = (raw: string) => {
     const tag = raw.trim();
@@ -28,23 +30,40 @@ export function TagInput({
 
   return (
     <div className="space-y-2">
-      <div className="text-sm font-medium text-slate-700">{label}</div>
-      <div className="flex flex-wrap gap-2">
-        {value.map((item) => (
-          <Badge key={item}>
-            {item}
-            <button
-              type="button"
-              className="ml-2 text-slate-400"
-              onClick={() => onChange(value.filter((tag) => tag !== item))}
+      <label
+        className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[color:var(--cp-muted)]"
+        htmlFor={inputId}
+      >
+        {label}
+      </label>
+      <div className="flex flex-wrap gap-2" role="list" aria-label={`${label} tags`}>
+        <AnimatePresence>
+          {value.map((item) => (
+            <motion.span
+              key={item}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.15 }}
+              className="inline-flex items-center gap-1 rounded-full border border-[color:var(--cp-line)] bg-white/75 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--cp-muted)]"
+              role="listitem"
             >
-              ×
-            </button>
-          </Badge>
-        ))}
+              {item}
+              <button
+                type="button"
+                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/5 text-[color:var(--cp-muted)] hover:bg-black/10"
+                onClick={() => onChange(value.filter((tag) => tag !== item))}
+                aria-label={`Remove ${item}`}
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </motion.span>
+          ))}
+        </AnimatePresence>
       </div>
       <div className="flex gap-2">
         <Input
+          id={inputId}
           placeholder={placeholder}
           value={input}
           onChange={(event) => setInput(event.target.value)}

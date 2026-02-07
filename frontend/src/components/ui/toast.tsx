@@ -2,12 +2,16 @@
 
 import * as React from "react";
 import * as ToastPrimitive from "@radix-ui/react-toast";
+import { CheckCircle, AlertTriangle, Info, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+export type ToastVariant = "info" | "success" | "warning" | "error";
 
 export type ToastMessage = {
   id: string;
   title: string;
   description?: string;
+  variant?: ToastVariant;
 };
 
 type ToastContextValue = {
@@ -23,6 +27,32 @@ export function useToast() {
   }
   return context;
 }
+
+const variantConfig: Record<
+  ToastVariant,
+  { icon: typeof Info; borderClass: string; iconClass: string }
+> = {
+  info: {
+    icon: Info,
+    borderClass: "border-[color:var(--cp-info)]/30",
+    iconClass: "text-[color:var(--cp-info)]",
+  },
+  success: {
+    icon: CheckCircle,
+    borderClass: "border-[color:var(--cp-success)]/30",
+    iconClass: "text-[color:var(--cp-success)]",
+  },
+  warning: {
+    icon: AlertTriangle,
+    borderClass: "border-[color:var(--cp-warn)]/30",
+    iconClass: "text-[color:var(--cp-warn)]",
+  },
+  error: {
+    icon: XCircle,
+    borderClass: "border-[color:var(--cp-danger)]/30",
+    iconClass: "text-[color:var(--cp-danger)]",
+  },
+};
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = React.useState<ToastMessage[]>([]);
@@ -40,26 +70,41 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={{ push }}>
       <ToastPrimitive.Provider swipeDirection="right">
         {children}
-        {messages.map((msg) => (
-          <ToastPrimitive.Root
-            key={msg.id}
-            duration={5000}
-            onOpenChange={(open) => {
-              if (!open) remove(msg.id);
-            }}
-            className={cn(
-              "glass rounded-xl border border-slate-200 px-4 py-3 shadow-lg"
-            )}
-          >
-            <div className="text-sm font-semibold text-slate-800">
-              {msg.title}
-            </div>
-            {msg.description && (
-              <div className="text-xs text-slate-600">{msg.description}</div>
-            )}
-          </ToastPrimitive.Root>
-        ))}
-        <ToastPrimitive.Viewport className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 outline-none" />
+        {messages.map((msg) => {
+          const variant = msg.variant ?? "info";
+          const config = variantConfig[variant];
+          const Icon = config.icon;
+          return (
+            <ToastPrimitive.Root
+              key={msg.id}
+              duration={5000}
+              onOpenChange={(open) => {
+                if (!open) remove(msg.id);
+              }}
+              className={cn(
+                "w-[min(380px,calc(100vw-2rem))] rounded-2xl border",
+                config.borderClass,
+                "bg-[color:var(--cp-surface)] px-4 py-3 shadow-[0_22px_45px_rgba(34,24,12,0.24)]",
+                "animate-slide-up"
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", config.iconClass)} aria-hidden="true" />
+                <div className="flex-1">
+                  <div className="text-xs font-semibold uppercase tracking-[0.1em] text-[color:var(--cp-primary)]">
+                    {msg.title}
+                  </div>
+                  {msg.description && (
+                    <div className="mt-1 text-sm text-[color:var(--cp-muted)]">
+                      {msg.description}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </ToastPrimitive.Root>
+          );
+        })}
+        <ToastPrimitive.Viewport className="fixed bottom-5 right-5 z-[100] flex flex-col gap-3 outline-none" />
       </ToastPrimitive.Provider>
     </ToastContext.Provider>
   );

@@ -16,15 +16,15 @@ npm install
 OPENROUTER_API_KEY=your_openrouter_key
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=openai/gpt-4o-mini
-DEDALUS_API_KEY=your_dedalus_key
-DEDALUS_MODEL=anthropic/claude-opus-4-5
 NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_firebase_project_id
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_firebase_sender_id
 NEXT_PUBLIC_FIREBASE_APP_ID=your_firebase_app_id
-DEDALUS_MCP_SERVERS=http://localhost:3000/mcp
+BACKEND_URL=http://localhost:8000
+# Optional override; defaults to /chat/stream.
+BACKEND_CHAT_STREAM_PATH=/chat/stream
 ```
 
 3. Run dev server
@@ -54,9 +54,8 @@ uv run uvicorn main:app --reload --port 8000
 - `GOOGLE_PLACES_API_KEY=...`
 
 前端内嵌聊天（Next.js API route）需要：
-- `DEDALUS_API_KEY`
-- `DEDALUS_MODEL`（可选）
-- `DEDALUS_MCP_SERVERS`（可选，逗号分隔）
+- `BACKEND_URL`
+- `BACKEND_CHAT_STREAM_PATH`（可选）
 
 前端使用 Firebase Auth + Firestore：
 - `NEXT_PUBLIC_FIREBASE_*` 系列变量
@@ -72,7 +71,7 @@ mcp-google-map --port 3000 --apikey "YOUR_GOOGLE_MAPS_API_KEY"
 
 设置环境变量：
 ```
-DEDALUS_MCP_SERVERS=http://localhost:3000/mcp
+BACKEND_URL=http://localhost:8000
 ```
 
 ## Pages

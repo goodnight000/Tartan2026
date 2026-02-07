@@ -1,3 +1,5 @@
+export type TriageLevel = "EMERGENT" | "URGENT_24H" | "ROUTINE";
+
 export type MedItem = {
   name?: string;
   dose?: string;
@@ -17,6 +19,14 @@ export type MedicalProfile = {
     radius_miles: number;
     open_now: boolean;
     preferred_days: string[];
+    preferred_pharmacy?: string;
+    appointment_windows?: string[];
+    reminder_mode?: "all" | "medications_only";
+    proactive_state?: "active" | "paused";
+    quiet_hours?: {
+      start: string;
+      end: string;
+    };
   };
   updated_at: string;
 };
@@ -51,4 +61,24 @@ export type ActionPlan = {
 export type ActionResult = {
   status: "success" | "failure";
   result: Record<string, unknown>;
+};
+
+export type HealthSignal = {
+  id: string;
+  title: string;
+  value: string;
+  trend?: "up" | "down" | "stable";
+  lastSync: string;
+  source: string;
+  data?: number[];
+};
+
+export type MedicationCardData = {
+  name: string;
+  dose: string;
+  frequency: string;
+  status: "on-track" | "missed" | "due-soon";
+  adherenceStreak: boolean[];
+  nextDose?: string;
+  daysUntilRefill?: number;
 };

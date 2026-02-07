@@ -4,12 +4,27 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
+  const idToken =
+    (body as { idToken?: string }).idToken ??
+    (body as { id_token?: string }).id_token;
+  const forwardedBody =
+    body && typeof body === "object"
+      ? Object.fromEntries(
+          Object.entries(body as Record<string, unknown>).filter(
+            ([key]) => key !== "idToken" && key !== "id_token"
+          )
+        )
+      : body;
   const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (idToken) {
+    headers.Authorization = `Bearer ${idToken}`;
+  }
 
   const res = await fetch(`${backendUrl}/actions/execute`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers,
+    body: JSON.stringify(forwardedBody),
   });
 
   if (!res.ok) {
