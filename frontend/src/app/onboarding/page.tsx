@@ -13,8 +13,8 @@ import { Label } from "@/components/ui/label";
 import { TagInput } from "@/components/TagInput";
 import { useToast } from "@/components/ui/toast";
 import { useEffect } from "react";
-import { auth } from "@/lib/firebase";
 import { upsertProfile } from "@/lib/firestore";
+import { useAuthUser } from "@/lib/useAuth";
 
 const medSchema = z.object({
   name: z.string().optional(),
@@ -44,21 +44,20 @@ export default function OnboardingPage() {
   const { push } = useToast();
   const [step, setStep] = useState(0);
   const [ready, setReady] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const { user, loading } = useAuthUser();
 
   useEffect(() => {
     const ensureAuth = async () => {
-      const user = auth.currentUser;
+      if (loading) return;
       if (!user) {
         push({ title: "Please log in first" });
         router.push("/login");
         return;
       }
-      setUserId(user.uid);
       setReady(true);
     };
     ensureAuth();
-  }, [push, router]);
+  }, [loading, push, router, user]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -81,7 +80,7 @@ export default function OnboardingPage() {
   });
 
   const onSubmit = async (values: FormValues) => {
-    if (!userId) {
+    if (!user) {
       push({ title: "Please log in first" });
       router.push("/login");
       return;
@@ -91,7 +90,7 @@ export default function OnboardingPage() {
       meds: values.meds.filter((med) => med.name?.trim())
     };
     try {
-      await upsertProfile(userId, cleaned);
+      await upsertProfile(user.uid, cleaned);
       push({ title: "Profile saved" });
       router.push("/app");
     } catch (error) {

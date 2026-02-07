@@ -16,8 +16,8 @@ import { useToast } from "@/components/ui/toast";
 import type { Reminder } from "@/lib/types";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { auth } from "@/lib/firebase";
 import { addSymptomLog, getProfile } from "@/lib/firestore";
+import { useAuthUser } from "@/lib/useAuth";
 
 const symptomSchema = z.object({
   symptom_text: z.string().min(2),
@@ -31,6 +31,7 @@ type SymptomValues = z.infer<typeof symptomSchema>;
 export default function AppPage() {
   const { push } = useToast();
   const router = useRouter();
+  const { user, loading } = useAuthUser();
   const [pending, setPending] = useState(false);
   const { appendMessage, appendAssistantDelta, setActionPlan } = useChatStore();
   const form = useForm<SymptomValues>({
@@ -39,18 +40,15 @@ export default function AppPage() {
   });
 
   useEffect(() => {
-    const ensureAuth = async () => {
-      if (!auth.currentUser) {
-        router.push("/login");
-      }
-    };
-    ensureAuth();
-  }, [router]);
+    if (!loading && !user) {
+      router.push("/login");
+    }
+  }, [loading, router, user]);
 
   const remindersQuery = useQuery({
     queryKey: ["reminders"],
+    enabled: Boolean(user),
     queryFn: async () => {
-      const user = auth.currentUser;
       if (!user) throw new Error("Not authenticated");
       const profile = await getProfile(user.uid);
       const meds = profile?.meds ?? [];
@@ -77,9 +75,8 @@ export default function AppPage() {
 
   const planQuery = useQuery({
     queryKey: ["health-plan", remindersQuery.data],
-    enabled: Boolean(remindersQuery.data),
+    enabled: Boolean(remindersQuery.data && user),
     queryFn: async () => {
-      const user = auth.currentUser;
       const profile = user ? await getProfile(user.uid) : {};
       const response = await fetch("/api/plan/reminder", {
         method: "POST",
@@ -141,7 +138,6 @@ export default function AppPage() {
   const onSubmit = async (values: SymptomValues) => {
     setPending(true);
     try {
-      const user = auth.currentUser;
       if (!user) throw new Error("Not authenticated");
       await addSymptomLog(user.uid, {
         symptom_text: values.symptom_text,

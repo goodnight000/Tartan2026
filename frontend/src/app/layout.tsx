@@ -17,7 +17,23 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Providers>
-          <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
+          <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+            <header className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">MedClaw</div>
+              <nav className="flex items-center gap-3 text-sm">
+                <a className="text-slate-600 hover:text-slate-900" href="/login">
+                  Login
+                </a>
+                <a className="text-slate-600 hover:text-slate-900" href="/app">
+                  Dashboard
+                </a>
+                <a className="text-slate-600 hover:text-slate-900" href="/profile">
+                  Profile
+                </a>
+              </nav>
+            </header>
+            {children}
+          </div>
         </Providers>
       </body>
     </html>

@@ -1,44 +1,68 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/components/ui/toast";
 import { auth } from "@/lib/firebase";
 import { getProfile } from "@/lib/firestore";
-import { useToast } from "@/components/ui/toast";
-import { EmailAuthProvider } from "firebase/auth";
-import * as firebaseui from "firebaseui";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail
+} from "firebase/auth";
 
 export default function LoginPage() {
   const router = useRouter();
   const { push } = useToast();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  useEffect(() => {
-    const ui =
-      firebaseui.auth.AuthUI.getInstance() || new firebaseui.auth.AuthUI(auth);
-
-    ui.start("#firebaseui-auth-container", {
-      signInFlow: "popup",
-      signInOptions: [EmailAuthProvider.PROVIDER_ID],
-      callbacks: {
-        signInSuccessWithAuthResult: async (authResult) => {
-          const userId = authResult.user?.uid;
-          if (!userId) return false;
-          const profile = await getProfile(userId);
-          if (profile) {
-            router.push("/app");
-          } else {
-            router.push("/onboarding");
-          }
-          return false;
-        },
-        signInFailure: (error) => {
-          push({ title: "Login failed", description: error.message });
-          return Promise.resolve();
-        }
+  const handleLogin = async () => {
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      const profile = await getProfile(result.user.uid);
+      if (profile) {
+        router.push("/app");
+      } else {
+        router.push("/onboarding");
       }
-    });
-  }, [push, router]);
+    } catch (error) {
+      push({ title: "Login failed", description: (error as Error).message });
+    }
+  };
+
+  const handleSignup = async () => {
+    try {
+      const result = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+      if (result.user?.uid) {
+        router.push("/onboarding");
+      }
+    } catch (error) {
+      push({ title: "Signup failed", description: (error as Error).message });
+    }
+  };
+
+  const handleReset = async () => {
+    try {
+      if (!email) {
+        push({ title: "Enter email first" });
+        return;
+      }
+      await sendPasswordResetEmail(auth, email);
+      push({ title: "Password reset sent" });
+    } catch (error) {
+      push({ title: "Reset failed", description: (error as Error).message });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -49,7 +73,59 @@ export default function LoginPage() {
         </p>
       </header>
       <Card>
-        <div id="firebaseui-auth-container" />
+        <Tabs defaultValue="login">
+          <TabsList>
+            <TabsTrigger value="login">Log in</TabsTrigger>
+            <TabsTrigger value="signup">Sign up</TabsTrigger>
+          </TabsList>
+          <TabsContent value="login">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Button onClick={handleLogin}>Log in</Button>
+                <Button variant="ghost" onClick={handleReset}>
+                  Forgot password
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+          <TabsContent value="signup">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </div>
+              <Button onClick={handleSignup}>Create account</Button>
+            </div>
+          </TabsContent>
+        </Tabs>
       </Card>
     </div>
   );

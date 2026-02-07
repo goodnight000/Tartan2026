@@ -6,24 +6,22 @@ import { Badge } from "@/components/ui/badge";
 import type { MedicalProfile, SymptomLog } from "@/lib/types";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { auth } from "@/lib/firebase";
 import { getActionLogs, getProfile, getSymptomLogs } from "@/lib/firestore";
+import { useAuthUser } from "@/lib/useAuth";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { user, loading } = useAuthUser();
 
   useEffect(() => {
-    const ensureAuth = async () => {
-      if (!auth.currentUser) {
-        router.push("/login");
-      }
-    };
-    ensureAuth();
-  }, [router]);
+    if (!loading && !user) {
+      router.push("/login");
+    }
+  }, [loading, router, user]);
   const profileQuery = useQuery({
     queryKey: ["profile"],
+    enabled: Boolean(user),
     queryFn: async () => {
-      const user = auth.currentUser;
       if (!user) {
         router.push("/login");
         throw new Error("Not authenticated");
@@ -36,8 +34,8 @@ export default function ProfilePage() {
 
   const symptomsQuery = useQuery({
     queryKey: ["symptom-logs"],
+    enabled: Boolean(user),
     queryFn: async () => {
-      const user = auth.currentUser;
       if (!user) return { items: [] as SymptomLog[] };
       const items = await getSymptomLogs(user.uid, 20);
       return { items };
@@ -46,8 +44,8 @@ export default function ProfilePage() {
 
   const actionsQuery = useQuery({
     queryKey: ["action-logs"],
+    enabled: Boolean(user),
     queryFn: async () => {
-      const user = auth.currentUser;
       if (!user) return { items: [] as ActionLog[] };
       const items = await getActionLogs(user.uid, 20);
       return { items };
