@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { CheckCircle, XCircle, Clock, FileText, Trash2, Download, AlertTriangle } from "lucide-react";
+import { CheckCircle, XCircle, Clock, FileText, Trash2, Download, AlertTriangle, RotateCcw } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,6 +88,8 @@ const DEFAULT_PROFILE: MedicalProfile = {
   },
 };
 
+const ONBOARDING_STATE_KEY = "carepilot.onboarding_state.v1";
+
 function hydrateProfile(profile: MedicalProfile | null, userId: string): MedicalProfile {
   const base = { ...DEFAULT_PROFILE, user_id: userId };
   if (!profile) return base;
@@ -141,6 +143,7 @@ export default function ProfilePage() {
   const [editSection, setEditSection] = useState<EditSection | null>(null);
   const [draftProfile, setDraftProfile] = useState<MedicalProfile | null>(null);
   const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -222,6 +225,38 @@ export default function ProfilePage() {
     }
   };
 
+  const handleRestartOnboarding = async () => {
+    if (!user) return;
+    const confirmed = window.confirm("Restart onboarding? You'll be taken through the full intake flow again.");
+    if (!confirmed) return;
+    setRestarting(true);
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(ONBOARDING_STATE_KEY);
+      }
+      const hydrated = hydrateProfile(profileQuery.data ?? null, user.uid);
+      const { user_id, updated_at, ...payload } = hydrated;
+      const cleanedOnboarding = {
+        completed: false,
+        step_last_seen: "consent_transparency",
+        version: "v1" as const,
+      };
+      await upsertProfile(user.uid, {
+        ...payload,
+        onboarding: {
+          ...cleanedOnboarding,
+        },
+      });
+      await profileQuery.refetch();
+      push({ title: "Onboarding restarted", description: "You can complete the intake again.", variant: "success" });
+      router.push("/onboarding");
+    } catch (error) {
+      push({ title: "Restart failed", description: (error as Error).message, variant: "error" });
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -233,6 +268,18 @@ export default function ProfilePage() {
           chips={<span className="status-chip status-chip--info">Consent Records Enabled</span>}
         />
         <TrustBadge variant="block" />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            size="sm"
+            variant="outline"
+            icon={<RotateCcw className="h-3.5 w-3.5" />}
+            onClick={handleRestartOnboarding}
+            disabled={restarting || profileQuery.isLoading}
+          >
+            {restarting ? "Restarting..." : "Restart Onboarding"}
+          </Button>
+          <span className="text-xs text-[color:var(--cp-muted)]">Re-run the full onboarding flow at any time.</span>
+        </div>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
