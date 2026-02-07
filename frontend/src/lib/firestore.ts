@@ -90,9 +90,6 @@ export async function addActionLog(
 }
 
 export async function getActionLogs(userId: string, max = 20) {
-<<<<<<< HEAD
-  const q = query(actionCollection, where("user_id", "==", userId));
-=======
   if (!firebaseEnabled || !db) {
     return localDb.getActionLogs(userId, max);
   }
@@ -102,7 +99,6 @@ export async function getActionLogs(userId: string, max = 20) {
     orderBy("created_at", "desc"),
     limit(max)
   );
->>>>>>> 7028dd1 (feat: fallback to local storage when FireBase is not configured)
   const snap = await getDocs(q);
   const items = snap.docs.map((docSnap) => docSnap.data() as ActionLog);
   return items
