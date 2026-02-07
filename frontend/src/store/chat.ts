@@ -19,6 +19,7 @@ type ChatState = {
   triageLevel: TriageLevel | null;
   appendMessage: (message: Omit<ChatMessage, "id" | "timestamp">) => void;
   appendAssistantDelta: (delta: string) => void;
+  finalizeStreaming: () => void;
   setActionPlan: (plan: ActionPlan | null) => void;
   setActionResult: (result: ActionResult | null) => void;
   setThinking: (v: boolean) => void;
@@ -85,6 +86,17 @@ export const useChatStore = create<ChatState>((set) => ({
         messages: [
           ...state.messages.slice(0, -1),
           { ...last, content: last.content + delta, isStreaming: true },
+        ],
+      };
+    }),
+  finalizeStreaming: () =>
+    set((state) => {
+      const last = state.messages[state.messages.length - 1];
+      if (!last || !last.isStreaming) return state;
+      return {
+        messages: [
+          ...state.messages.slice(0, -1),
+          { ...last, isStreaming: false },
         ],
       };
     }),

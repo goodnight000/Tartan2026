@@ -124,29 +124,34 @@ export default function OnboardingPage() {
 
   // Persist draft on changes (debounced)
   useEffect(() => {
+    let timerId: ReturnType<typeof setTimeout> | null = null;
     const subscription = form.watch((values) => {
-      const timer = setTimeout(() => {
+      if (timerId) clearTimeout(timerId);
+      timerId = setTimeout(() => {
         if (typeof window !== "undefined") {
           window.localStorage.setItem(DRAFT_KEY, JSON.stringify(values));
         }
       }, 500);
-      return () => clearTimeout(timer);
     });
-    return () => subscription.unsubscribe();
+    return () => {
+      if (timerId) clearTimeout(timerId);
+      subscription.unsubscribe();
+    };
   }, [form]);
 
+  // Watch all fields so completeness re-computes on every change
+  const watchedValues = form.watch();
   const completeness = useMemo(() => {
-    const values = form.getValues();
     let filled = 0;
-    let total = 6;
-    if (values.conditions.length > 0) filled++;
-    if (values.allergies.length > 0) filled++;
-    if (values.meds.some((m) => m.name?.trim())) filled++;
-    if (values.preferences.preferred_pharmacy?.trim()) filled++;
-    if (values.preferences.preferred_days.length > 0) filled++;
-    if (values.family_history?.trim()) filled++;
+    const total = 6;
+    if (watchedValues.conditions.length > 0) filled++;
+    if (watchedValues.allergies.length > 0) filled++;
+    if (watchedValues.meds.some((m) => m.name?.trim())) filled++;
+    if (watchedValues.preferences.preferred_pharmacy?.trim()) filled++;
+    if (watchedValues.preferences.preferred_days.length > 0) filled++;
+    if (watchedValues.family_history?.trim()) filled++;
     return Math.round((filled / total) * 100);
-  }, [form]);
+  }, [watchedValues]);
 
   const onSubmit = async (values: FormValues) => {
     if (!user) {

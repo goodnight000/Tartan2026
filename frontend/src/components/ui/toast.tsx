@@ -20,10 +20,15 @@ type ToastContextValue = {
 
 const ToastContext = React.createContext<ToastContextValue | null>(null);
 
+const noopToast: ToastContextValue = { push: () => {} };
+
 export function useToast() {
   const context = React.useContext(ToastContext);
   if (!context) {
-    throw new Error("useToast must be used within ToastProvider");
+    if (process.env.NODE_ENV === "development") {
+      console.warn("useToast called outside ToastProvider — toasts will be silent");
+    }
+    return noopToast;
   }
   return context;
 }

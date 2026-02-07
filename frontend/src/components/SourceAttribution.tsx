@@ -37,8 +37,8 @@ export function SourceAttribution({
       </button>
       {open && (
         <ul className="mt-1.5 space-y-1">
-          {sources.map((source) => (
-            <li key={source.label} className="text-xs text-[color:var(--cp-muted)]">
+          {sources.map((source, index) => (
+            <li key={`${index}-${source.label}`} className="text-xs text-[color:var(--cp-muted)]">
               {source.url ? (
                 <a
                   href={source.url}

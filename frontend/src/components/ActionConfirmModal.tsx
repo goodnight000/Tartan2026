@@ -16,6 +16,9 @@ import {
 import type { ActionPlan } from "@/lib/types";
 
 const toolMeta: Record<string, { title: string; icon: typeof Zap; verb: string }> = {
+  appointment_book: { title: "Confirm Appointment Booking", icon: Calendar, verb: "Book" },
+  medication_refill_request: { title: "Confirm Prescription Refill", icon: Pill, verb: "Request" },
+  lab_clinic_discovery: { title: "Confirm Lab & Clinic Search", icon: Search, verb: "Search" },
   book_appointment: { title: "Confirm Appointment Booking", icon: Calendar, verb: "Book" },
   request_refill: { title: "Confirm Prescription Refill", icon: Pill, verb: "Request" },
   find_pharmacy: { title: "Confirm Pharmacy Search", icon: MapPin, verb: "Search" },
@@ -43,11 +46,13 @@ export function ActionConfirmModal({
   open,
   onClose,
   onConfirm,
+  pending = false,
 }: {
   plan: ActionPlan | null;
   open: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  pending?: boolean;
 }) {
   if (!plan) return null;
   const meta = getToolMeta(plan.tool);
@@ -96,8 +101,8 @@ export function ActionConfirmModal({
                   Details
                 </h4>
                 <dl className="grid gap-2 sm:grid-cols-2">
-                  {params.map(({ label, value }) => (
-                    <div key={label}>
+                  {params.map(({ label, value }, index) => (
+                    <div key={`${index}-${label}`}>
                       <dt className="text-[11px] font-medium text-[color:var(--cp-muted)]">{label}</dt>
                       <dd className="text-sm font-medium text-[color:var(--cp-text)]">{value}</dd>
                     </div>
@@ -108,19 +113,21 @@ export function ActionConfirmModal({
 
             <div className="flex items-center gap-3 text-xs text-[color:var(--cp-muted)]">
               <TrustBadge />
-              <span>You can cancel or reverse this action anytime.</span>
+              <span>Cancel now if anything looks incorrect before execution.</span>
             </div>
           </div>
 
           <DialogFooter className="mt-5">
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="ghost" onClick={onClose} disabled={pending}>
               Cancel
             </Button>
             <Button
               onClick={onConfirm}
               icon={<Shield className="h-3.5 w-3.5" />}
+              disabled={pending}
+              loading={pending}
             >
-              {meta.verb} & Record Consent
+              {pending ? "Processing..." : `${meta.verb} & Record Consent`}
             </Button>
           </DialogFooter>
         </motion.div>

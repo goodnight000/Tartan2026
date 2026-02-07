@@ -182,6 +182,40 @@ class SQLiteMemoryDB:
                   updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS documents (
+                  id TEXT PRIMARY KEY,
+                  user_id TEXT NOT NULL,
+                  session_key TEXT NOT NULL,
+                  file_name TEXT NOT NULL,
+                  mime_type TEXT NOT NULL,
+                  file_category TEXT NOT NULL,
+                  storage_ref TEXT NOT NULL,
+                  upload_time TEXT NOT NULL,
+                  processing_status TEXT NOT NULL DEFAULT 'queued',
+                  extraction_confidence REAL NOT NULL DEFAULT 0.0,
+                  summary_json TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS extracted_findings (
+                  id TEXT PRIMARY KEY,
+                  document_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  session_key TEXT NOT NULL,
+                  finding_type TEXT NOT NULL,
+                  label TEXT NOT NULL,
+                  value_text TEXT,
+                  unit TEXT,
+                  reference_range TEXT,
+                  is_abnormal INTEGER NOT NULL DEFAULT 0,
+                  confidence REAL NOT NULL,
+                  provenance_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS conversation_preferences (
                   id TEXT PRIMARY KEY,
                   user_id TEXT NOT NULL,
@@ -225,9 +259,38 @@ class SQLiteMemoryDB:
                   ON action_audit(user_id, started_at);
                 CREATE INDEX IF NOT EXISTS idx_health_signals_user_metric_time
                   ON health_signals(user_id, metric_type, observed_at);
+                CREATE INDEX IF NOT EXISTS idx_documents_user_session_upload
+                  ON documents(user_id, session_key, upload_time DESC);
+                CREATE INDEX IF NOT EXISTS idx_documents_user_category_upload
+                  ON documents(user_id, file_category, upload_time DESC);
+                CREATE INDEX IF NOT EXISTS idx_findings_user_session_doc
+                  ON extracted_findings(user_id, session_key, document_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_findings_user_label
+                  ON extracted_findings(user_id, label);
                 CREATE INDEX IF NOT EXISTS idx_conv_pref_user_key
                   ON conversation_preferences(user_id, key);
                 CREATE INDEX IF NOT EXISTS idx_conv_summary_user_session
                   ON conversation_summaries(user_id, session_key, created_at DESC);
                 """
             )
+            # Idempotent schema backfill for existing DBs that might have early versions of these tables.
+            self._ensure_column(conn, "documents", "session_key", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "documents", "file_category", "TEXT NOT NULL DEFAULT 'other'")
+            self._ensure_column(conn, "documents", "processing_status", "TEXT NOT NULL DEFAULT 'queued'")
+            self._ensure_column(conn, "documents", "extraction_confidence", "REAL NOT NULL DEFAULT 0.0")
+            self._ensure_column(conn, "documents", "summary_json", "TEXT")
+            self._ensure_column(conn, "extracted_findings", "session_key", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "extracted_findings", "provenance_json", "TEXT NOT NULL DEFAULT '{}'")
+
+    @staticmethod
+    def _ensure_column(
+        conn: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        definition_sql: str,
+    ) -> None:
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        existing_columns = {row["name"] for row in rows}
+        if column_name in existing_columns:
+            return
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition_sql}")

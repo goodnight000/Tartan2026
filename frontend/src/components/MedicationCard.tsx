@@ -57,8 +57,10 @@ export function MedicationCard({
       <div className="flex items-center justify-between text-xs text-[color:var(--cp-muted)]">
         {med.nextDose && <span>Next: {med.nextDose}</span>}
         {med.daysUntilRefill !== undefined && (
-          <span className={cn(med.daysUntilRefill <= 3 && "font-semibold text-[color:var(--cp-warn)]")}>
-            Refill in {med.daysUntilRefill}d
+          <span className={cn(med.daysUntilRefill <= 3 && "font-semibold text-[color:var(--cp-warn)]", med.daysUntilRefill < 0 && "text-[color:var(--cp-danger)]")}>
+            {med.daysUntilRefill < 0
+              ? `Overdue by ${Math.abs(med.daysUntilRefill)}d`
+              : `Refill in ${med.daysUntilRefill}d`}
           </span>
         )}
       </div>

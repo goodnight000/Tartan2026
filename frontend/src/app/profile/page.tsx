@@ -146,9 +146,9 @@ export default function ProfilePage() {
                 </span>
                 <div className="mt-2 space-y-2">
                   {profileQuery.data.meds.length ? (
-                    profileQuery.data.meds.map((med) => (
+                    profileQuery.data.meds.map((med, index) => (
                       <div
-                        key={`${med.name}-${med.dose}`}
+                        key={`${index}-${med.name}-${med.dose}`}
                         className="flex items-center justify-between rounded-xl border border-[color:var(--cp-line)] bg-white/70 px-3 py-2"
                       >
                         <div>

@@ -11,6 +11,7 @@ import { ThinkingIndicator } from "@/components/ThinkingIndicator";
 import { TriageBadge } from "@/components/TriageBadge";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { DocumentUploadFlow } from "@/components/DocumentUploadFlow";
+import type { DocumentUploadResult } from "@/components/DocumentUploadFlow";
 import { consumeSSE } from "@/lib/sse";
 import { useChatStore } from "@/store/chat";
 import { useToast } from "@/components/ui/toast";
@@ -72,6 +73,7 @@ function formatTimestamp(ts: number): string {
 export function ChatPanel() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  const [actionPending, setActionPending] = useState(false);
   const [mode, setMode] = useState<"type" | "voice" | "document">("type");
   const { push } = useToast();
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -84,6 +86,7 @@ export function ChatPanel() {
     actionPlan,
     setActionPlan,
     setActionResult,
+    finalizeStreaming,
     isThinking,
     setThinking,
     triageLevel,
@@ -180,8 +183,8 @@ export function ChatPanel() {
           if (text) {
             fullContent = text;
             appendMessage({ role: "assistant", content: text });
-            setThinking(false);
           }
+          setThinking(false);
         }
         if (event.event === "action_plan") {
           setActionPlan(event.data as ActionPlan);
@@ -193,27 +196,32 @@ export function ChatPanel() {
         }
       });
 
-      // Infer triage from completed response
       if (fullContent) {
         const inferred = inferTriageFromContent(fullContent);
         if (inferred) setTriageLevel(inferred);
       }
     } catch (error) {
+      appendMessage({ role: "system", content: `Connection error: ${(error as Error).message}` });
       push({ title: "Chat Error", description: (error as Error).message, variant: "error" });
-      setThinking(false);
     } finally {
+      finalizeStreaming();
+      setThinking(false);
       setPending(false);
     }
   };
 
   const handleExecute = async () => {
-    if (!actionPlan) return;
+    if (!actionPlan || actionPending) return;
+    setActionPending(true);
     try {
       let idToken: string | undefined;
       const user = auth.currentUser;
       if (user) {
         try { idToken = await user.getIdToken(); } catch { /* noop */ }
       }
+      const latestUserMessage = [...useChatStore.getState().messages]
+        .reverse()
+        .find((msg) => msg.role === "user")?.content;
 
       const res = await fetch("/api/actions/execute", {
         method: "POST",
@@ -222,9 +230,13 @@ export function ChatPanel() {
           plan: actionPlan,
           user_confirmed: true,
           session_key: sessionKey,
+          message_text: latestUserMessage,
           idToken,
         }),
       });
+      if (!res.ok) {
+        throw new Error(`Action execution failed (${res.status})`);
+      }
       const data: ActionResult = await res.json();
       setActionResult(data);
       const resultText = formatActionResult(actionPlan.tool, data);
@@ -238,6 +250,7 @@ export function ChatPanel() {
     } catch (error) {
       push({ title: "Action Failed", description: (error as Error).message, variant: "error" });
     } finally {
+      setActionPending(false);
       setActionPlan(null);
     }
   };
@@ -342,15 +355,26 @@ export function ChatPanel() {
         {/* Input area */}
         {mode === "voice" && (
           <div className="flex items-center gap-3">
-            <VoiceInputButton onTranscript={(text) => setInput(text)} />
+            <VoiceInputButton
+              sessionKey={sessionKey}
+              onTranscript={(text) => {
+                setInput(text);
+                setMode("type");
+              }}
+            />
             <span className="text-xs text-[color:var(--cp-muted)]">Tap mic, speak, then edit before sending</span>
           </div>
         )}
 
         {mode === "document" && (
           <DocumentUploadFlow
-            onComplete={(summary) => {
-              appendMessage({ role: "user", content: summary });
+            sessionKey={sessionKey}
+            onComplete={(result: DocumentUploadResult) => {
+              appendMessage({
+                role: "user",
+                content: `Uploaded ${result.docType}: ${result.fileName}`,
+              });
+              appendMessage({ role: "assistant", content: result.messageForChat });
               setMode("type");
             }}
           />
@@ -389,6 +413,7 @@ export function ChatPanel() {
         open={Boolean(actionPlan)}
         onClose={() => setActionPlan(null)}
         onConfirm={handleExecute}
+        pending={actionPending}
       />
     </div>
   );

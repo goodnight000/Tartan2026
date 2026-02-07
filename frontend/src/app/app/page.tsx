@@ -134,10 +134,11 @@ export default function AppPage() {
 
   const planQuery = useQuery({
     queryKey: ["health-plan", user?.uid, remindersQuery.data],
-    enabled: Boolean(remindersQuery.data && user),
+    enabled: Boolean(remindersQuery.data && user && profileQuery.data),
     queryFn: async () => {
       const response = await fetch("/api/plan/reminder", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           profile: profileQuery.data,
           reminders: remindersQuery.data?.refill_reminders ?? [],
@@ -171,7 +172,11 @@ export default function AppPage() {
           dose: med.dose ?? "N/A",
           frequency: `${med.frequency_per_day}x/day`,
           status,
-          adherenceStreak: Array.from({ length: 7 }, () => Math.random() > 0.2),
+          adherenceStreak: Array.from({ length: 7 }, (_, i) => {
+            // Deterministic per-medication streak based on name + day index
+            const seed = (med.name ?? "").length + i;
+            return seed % 5 !== 0; // ~80% adherence, stable across renders
+          }),
           daysUntilRefill,
         };
       });
@@ -197,7 +202,6 @@ export default function AppPage() {
   };
 
   const greeting = getGreeting();
-  const GreetingIcon = greeting.icon;
 
   const topPriority = useMemo(() => {
     const first = remindersQuery.data?.refill_reminders?.[0];
@@ -339,9 +343,9 @@ export default function AppPage() {
               <SkeletonCard />
             ) : medCards.length > 0 ? (
               <div className="space-y-3">
-                {medCards.map((med) => (
+                {medCards.map((med, index) => (
                   <MedicationCard
-                    key={med.name}
+                    key={`${index}-${med.name}`}
                     med={med}
                     onRefill={() =>
                       push({ title: `Refill requested for ${med.name}`, variant: "success" })
@@ -438,10 +442,10 @@ function ActionResults() {
         {result.status}
       </div>
       <div className="space-y-1">
-        {Object.entries(result.result).map(([key, val]) => (
+        {Object.entries(result.result ?? {}).map(([key, val]) => (
           <div key={key} className="flex justify-between text-xs">
             <span className="font-medium text-[color:var(--cp-muted)]">{key.replace(/_/g, " ")}</span>
-            <span className="text-[color:var(--cp-text)]">{typeof val === "object" ? JSON.stringify(val) : String(val)}</span>
+            <span className="text-[color:var(--cp-text)]">{typeof val === "object" && val !== null ? JSON.stringify(val) : String(val ?? "")}</span>
           </div>
         ))}
       </div>

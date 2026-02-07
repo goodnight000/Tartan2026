@@ -10,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
+import httpx
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -64,6 +65,7 @@ class ActionExecuteRequest(BaseModel):
     plan: ActionPlan
     user_confirmed: bool
     session_key: str | None = None
+    message_text: str | None = None
 
 
 class ProfilePayload(BaseModel):
@@ -134,12 +136,19 @@ class CarePilotApp:
                     message="Emergency context blocks transactional actions.",
                 )
             token = payload.get("consent_token")
-            payload_hash = payload.get("payload_hash") or _tool_params_hash(payload)
+            supplied_hash = payload.get("payload_hash")
+            payload_hash = _tool_params_hash(payload)
             if not token:
                 return HookDecision(
                     allowed=False,
                     code="missing_consent_token",
                     message="Consent token required for transactional action.",
+                )
+            if supplied_hash is not None and str(supplied_hash) != payload_hash:
+                return HookDecision(
+                    allowed=False,
+                    code="invalid_consent_token",
+                    message="Consent payload hash mismatch.",
                 )
             valid, reason = self.memory.validate_consent_token(
                 user_id=ctx.user_id,
@@ -171,7 +180,7 @@ class CarePilotApp:
             tool_name=tool.name,
             details=details,
         )
-        if tool.name in self.transactional_tools and outcome.get("status") in {"succeeded", "partial", "pending"}:
+        if tool.name in self.transactional_tools and outcome.get("status") in {"succeeded", "partial"}:
             token = payload.get("consent_token")
             if token:
                 self.memory.clinical.mark_consent_token_used(token)
@@ -197,20 +206,11 @@ def get_user_id(auth_header: str | None) -> str:
         raise HTTPException(status_code=401, detail="Missing Authorization")
     raw = auth_header.replace("Bearer", "", 1).strip()
     if not raw:
-        return "demo-user"
-
-    # If the bearer token is a JWT, prefer subject/uid claims to avoid using a long raw token as user_id.
-    parts = raw.split(".")
-    if len(parts) >= 2:
-        try:
-            payload = parts[1] + ("=" * (-len(parts[1]) % 4))
-            claims = json.loads(base64.urlsafe_b64decode(payload.encode("utf-8")).decode("utf-8"))
-            for key in ("sub", "uid", "user_id"):
-                value = claims.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
-        except Exception:
-            pass
+        if os.getenv("ALLOW_ANON", "false").lower() == "true":
+            return "demo-user"
+        raise HTTPException(status_code=401, detail="Missing Authorization")
+    # Treat bearer token as opaque unless verified by a trusted upstream.
+    # Do not trust unsigned/unchecked JWT claims for identity.
 
     if len(raw) > 96:
         return f"token_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:24]}"
@@ -240,6 +240,520 @@ def _build_ctx(
 
 def _emit_sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+_OPENAI_API_BASE = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+_MAX_AUDIO_BYTES = int(os.getenv("CAREPILOT_MAX_AUDIO_BYTES", str(20 * 1024 * 1024)))
+_MAX_DOCUMENT_BYTES = int(os.getenv("CAREPILOT_MAX_DOCUMENT_BYTES", str(25 * 1024 * 1024)))
+_ALLOWED_AUDIO_MIME_TYPES = {
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/mp4",
+    "audio/m4a",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/webm",
+    "audio/ogg",
+}
+_ALLOWED_AUDIO_EXTENSIONS = {".mp3", ".mp4", ".m4a", ".wav", ".webm", ".ogg", ".flac"}
+_ALLOWED_DOCUMENT_MIME_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+    "text/plain",
+    "text/csv",
+}
+_ALLOWED_DOCUMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".txt", ".csv"}
+_FILE_CATEGORIES = {"lab_report", "imaging_report", "clinical_note", "voice_attachment", "other"}
+_HIGH_RISK_MARKERS = {
+    "stroke",
+    "hemorrhage",
+    "intracranial bleed",
+    "aneurysm",
+    "pulmonary embol",
+    "critical",
+    "urgent",
+    "malignancy",
+    "mass effect",
+    "sepsis",
+    "anaphylaxis",
+    "myocardial infarction",
+    "troponin",
+}
+
+
+def _require_openai_api_key() -> str:
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="OpenAI API key is not configured.")
+    return api_key
+
+
+def _normalize_upload_filename(upload: UploadFile | None, fallback_name: str) -> str:
+    file_name = (upload.filename or "").strip() if upload else ""
+    return file_name or fallback_name
+
+
+def _extension_from_filename(file_name: str) -> str:
+    return Path(file_name).suffix.lower().strip()
+
+
+async def _read_upload_bytes(upload: UploadFile, *, max_bytes: int, too_large_detail: str) -> bytes:
+    raw = await upload.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail=too_large_detail)
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    return raw
+
+
+def _provider_error_message(response: httpx.Response) -> str:
+    message = response.text.strip()
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        err = payload.get("error")
+        if isinstance(err, dict):
+            msg = err.get("message")
+            if isinstance(msg, str) and msg.strip():
+                return msg.strip()
+        msg = payload.get("message")
+        if isinstance(msg, str) and msg.strip():
+            return msg.strip()
+    return message or f"HTTP {response.status_code}"
+
+
+def _extract_json_object(raw_text: str) -> dict[str, Any] | None:
+    text = (raw_text or "").strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return payload
+    except json.JSONDecodeError:
+        pass
+
+    for start_idx in [idx for idx, char in enumerate(text) if char == "{"]:
+        depth = 0
+        for end_idx in range(start_idx, len(text)):
+            char = text[end_idx]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+            if depth == 0:
+                candidate = text[start_idx : end_idx + 1]
+                try:
+                    payload = json.loads(candidate)
+                    if isinstance(payload, dict):
+                        return payload
+                except json.JSONDecodeError:
+                    break
+    return None
+
+
+def _coerce_completion_text(response_json: dict[str, Any]) -> str:
+    choices = response_json.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    message = choices[0].get("message", {})
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text_value = item.get("text")
+                if isinstance(text_value, str):
+                    parts.append(text_value)
+        return "\n".join(parts)
+    return ""
+
+
+def _estimate_transcription_confidence(segments: list[dict[str, Any]]) -> float:
+    if not segments:
+        return 0.8
+    scores: list[float] = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        local_scores: list[float] = []
+        avg_logprob = segment.get("avg_logprob")
+        if isinstance(avg_logprob, (int, float)):
+            local_scores.append(max(0.0, min(1.0, 1.0 + (float(avg_logprob) / 2.5))))
+        no_speech_prob = segment.get("no_speech_prob")
+        if isinstance(no_speech_prob, (int, float)):
+            local_scores.append(max(0.0, min(1.0, 1.0 - float(no_speech_prob))))
+        if local_scores:
+            scores.append(sum(local_scores) / len(local_scores))
+    if not scores:
+        return 0.8
+    return round(max(0.0, min(1.0, sum(scores) / len(scores))), 3)
+
+
+def _openai_whisper_transcribe(
+    *,
+    file_name: str,
+    mime_type: str,
+    audio_bytes: bytes,
+    language_hint: str | None,
+    prompt: str | None,
+) -> dict[str, Any]:
+    api_key = _require_openai_api_key()
+    model = (os.getenv("CAREPILOT_WHISPER_MODEL") or "whisper-1").strip()
+    payload: dict[str, Any] = {"model": model, "response_format": "verbose_json"}
+    if language_hint:
+        payload["language"] = language_hint.strip()
+    if prompt:
+        payload["prompt"] = prompt.strip()
+
+    files = {"file": (file_name, audio_bytes, mime_type or "application/octet-stream")}
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+            response = client.post(
+                f"{_OPENAI_API_BASE}/audio/transcriptions",
+                headers=headers,
+                data=payload,
+                files=files,
+            )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Transcription provider timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Failed to reach transcription provider.") from exc
+
+    if response.status_code >= 400:
+        provider_error = _provider_error_message(response)
+        if response.status_code == 401:
+            raise HTTPException(status_code=503, detail="OpenAI API key was rejected by provider.")
+        if response.status_code == 429:
+            raise HTTPException(status_code=429, detail="Transcription provider is rate-limited. Retry shortly.")
+        raise HTTPException(status_code=502, detail=f"Transcription failed: {provider_error}")
+
+    try:
+        payload_json = response.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="Transcription provider returned invalid JSON.") from exc
+
+    transcript_text = str(payload_json.get("text") or "").strip()
+    if not transcript_text:
+        raise HTTPException(status_code=502, detail="Transcription provider returned empty text.")
+    raw_segments = payload_json.get("segments")
+    segments = raw_segments if isinstance(raw_segments, list) else []
+    confidence = _estimate_transcription_confidence([item for item in segments if isinstance(item, dict)])
+    return {
+        "transcript_text": transcript_text,
+        "confidence": confidence,
+        "segments": [item for item in segments if isinstance(item, dict)],
+        "provider_payload": payload_json,
+    }
+
+
+def _resolve_document_category(file_name: str, mime_type: str, explicit_category: str | None) -> str:
+    if explicit_category and explicit_category.strip():
+        normalized = explicit_category.strip().lower()
+        if normalized not in _FILE_CATEGORIES:
+            raise HTTPException(status_code=400, detail="Invalid file_category value.")
+        return normalized
+    lowered_name = file_name.lower()
+    if mime_type.startswith("image/"):
+        return "imaging_report"
+    if "imaging" in lowered_name or "mri" in lowered_name or "ct" in lowered_name or "xray" in lowered_name:
+        return "imaging_report"
+    if "lab" in lowered_name or "cbc" in lowered_name or "panel" in lowered_name:
+        return "lab_report"
+    return "other"
+
+
+def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
+    decoded = pdf_bytes.decode("latin-1", errors="ignore")
+    snippets: list[str] = []
+    for match in re.finditer(r"\(([^()]{2,300})\)", decoded):
+        chunk = match.group(1)
+        chunk = chunk.replace("\\n", " ").replace("\\r", " ").replace("\\t", " ").replace("\\)", ")").replace(
+            "\\(", "("
+        )
+        chunk = re.sub(r"\s+", " ", chunk).strip()
+        if len(chunk) >= 3 and any(ch.isalpha() for ch in chunk):
+            snippets.append(chunk)
+    for match in re.finditer(rb"[A-Za-z][A-Za-z0-9\-\s,.:/%()]{4,160}", pdf_bytes):
+        chunk = match.group(0).decode("latin-1", errors="ignore")
+        chunk = re.sub(r"\s+", " ", chunk).strip()
+        if len(chunk) >= 5 and any(ch.isalpha() for ch in chunk):
+            snippets.append(chunk)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for snippet in snippets:
+        lowered = snippet.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        deduped.append(snippet)
+        if len(deduped) >= 500:
+            break
+    return "\n".join(deduped)[:20000]
+
+
+def _extract_document_text(file_name: str, mime_type: str, document_bytes: bytes) -> tuple[str, float, str]:
+    ext = _extension_from_filename(file_name)
+    if mime_type.startswith("text/") or ext in {".txt", ".csv", ".json", ".md"}:
+        text = document_bytes.decode("utf-8", errors="ignore").strip()
+        confidence = 0.95 if text else 0.0
+        return text, confidence, "direct_text"
+    if mime_type == "application/pdf" or ext == ".pdf":
+        text = _extract_text_from_pdf_bytes(document_bytes).strip()
+        confidence = 0.8 if len(text) > 200 else 0.45 if len(text) > 40 else 0.2
+        return text, confidence, "pdf_text_extract"
+    if mime_type.startswith("image/") or ext in {".png", ".jpg", ".jpeg", ".webp"}:
+        return "", 0.0, "image_no_local_ocr"
+    text = document_bytes.decode("utf-8", errors="ignore").strip()
+    confidence = 0.4 if text else 0.0
+    return text, confidence, "generic_extract"
+
+
+def _normalize_follow_up_questions(raw_questions: Any) -> list[str]:
+    questions: list[str] = []
+    if isinstance(raw_questions, list):
+        for item in raw_questions:
+            if not isinstance(item, str):
+                continue
+            cleaned = re.sub(r"\s+", " ", item).strip()
+            if cleaned:
+                questions.append(cleaned)
+    if len(questions) >= 3:
+        return questions[:5]
+    while len(questions) < 3:
+        defaults = [
+            "What findings should I discuss first with my clinician?",
+            "Do these findings require repeat testing or comparison with prior results?",
+            "What warning signs should prompt urgent in-person care?",
+        ]
+        questions.append(defaults[len(questions)])
+    return questions[:5]
+
+
+def _is_high_risk_content(text: str) -> tuple[bool, list[str]]:
+    lowered = text.lower()
+    matched = sorted({marker for marker in _HIGH_RISK_MARKERS if marker in lowered})
+    return bool(matched), matched
+
+
+def _fallback_document_interpretation(extracted_text: str, user_question: str | None) -> dict[str, Any]:
+    lines = [line.strip() for line in extracted_text.splitlines() if line.strip()]
+    key_findings = lines[:3] if lines else ["I could not reliably extract structured findings from the file."]
+    question = (user_question or "").strip()
+    summary = (
+        "I extracted limited text from your document and summarized the most visible items."
+        if lines
+        else "I could not extract enough text to summarize details confidently."
+    )
+    if question:
+        summary += f" I focused on your question: {question[:180]}."
+    return {
+        "key_findings": key_findings,
+        "plain_language_summary": summary,
+        "follow_up_questions": _normalize_follow_up_questions([]),
+        "uncertainty_statement": "This extraction is limited and may miss details.",
+        "safety_guidance": "",
+        "urgency_level": "routine",
+        "high_risk_flags": [],
+    }
+
+
+def _enforce_document_safety(
+    *,
+    interpretation: dict[str, Any],
+    extracted_text: str,
+    category: str,
+) -> dict[str, Any]:
+    raw_findings = interpretation.get("key_findings")
+    key_findings = []
+    if isinstance(raw_findings, list):
+        for value in raw_findings:
+            if isinstance(value, str):
+                cleaned = re.sub(r"\s+", " ", value).strip()
+                if cleaned:
+                    key_findings.append(cleaned)
+    key_findings = key_findings[:6]
+
+    raw_summary = interpretation.get("plain_language_summary")
+    summary = re.sub(r"\s+", " ", str(raw_summary or "")).strip()
+    if not summary:
+        summary = "I could not confidently extract enough detail for a full summary."
+    if "not a diagnosis" not in summary.lower():
+        summary = f"This is an informational summary, not a diagnosis. {summary}"
+
+    uncertainty = re.sub(r"\s+", " ", str(interpretation.get("uncertainty_statement") or "")).strip()
+    if not uncertainty:
+        uncertainty = "Some findings may be incomplete or uncertain from this file alone."
+
+    high_risk_interpret = interpretation.get("high_risk_flags")
+    high_risk_flags: list[str] = []
+    if isinstance(high_risk_interpret, list):
+        for value in high_risk_interpret:
+            if isinstance(value, str) and value.strip():
+                high_risk_flags.append(value.strip().lower())
+    high_risk_from_text, matched_markers = _is_high_risk_content(
+        "\n".join(key_findings + [summary, extracted_text, " ".join(high_risk_flags)])
+    )
+    merged_high_risk = sorted(set(high_risk_flags + matched_markers))
+
+    urgency_level = str(interpretation.get("urgency_level") or "routine").strip().lower()
+    if urgency_level not in {"routine", "urgent"}:
+        urgency_level = "routine"
+    if high_risk_from_text:
+        urgency_level = "urgent"
+
+    safety_guidance = re.sub(r"\s+", " ", str(interpretation.get("safety_guidance") or "")).strip()
+    if urgency_level == "urgent":
+        if not safety_guidance:
+            safety_guidance = (
+                "Some findings may need urgent clinical review today. "
+                "If you have severe symptoms (for example chest pain, breathing trouble, confusion, or severe weakness), "
+                "seek emergency care now."
+            )
+    elif not safety_guidance:
+        safety_guidance = (
+            "Review this with a licensed clinician who can interpret it in the context of your history and exam."
+        )
+
+    follow_up_questions = _normalize_follow_up_questions(interpretation.get("follow_up_questions"))
+    if category == "imaging_report" and all("image" not in question.lower() for question in follow_up_questions):
+        follow_up_questions[0] = "How do these report findings compare to my prior imaging, if available?"
+
+    return {
+        "key_findings": key_findings,
+        "plain_language_summary": summary,
+        "follow_up_questions": follow_up_questions,
+        "uncertainty_statement": uncertainty,
+        "safety_guidance": safety_guidance,
+        "urgency_level": urgency_level,
+        "high_risk_flags": merged_high_risk,
+    }
+
+
+def _openai_document_interpret(
+    *,
+    file_name: str,
+    mime_type: str,
+    document_bytes: bytes,
+    extracted_text: str,
+    category: str,
+    user_question: str | None,
+) -> dict[str, Any]:
+    api_key = _require_openai_api_key()
+    model = (os.getenv("CAREPILOT_DOCUMENT_MODEL") or "gpt-4o-mini").strip()
+
+    prompt_lines = [
+        "You are a clinical documentation assistant.",
+        "Return JSON only with keys: key_findings, plain_language_summary, follow_up_questions, uncertainty_statement, safety_guidance, urgency_level, high_risk_flags.",
+        "Rules: keep uncertainty explicit, never provide diagnosis, never claim treatment certainty, suggest clinician follow-up.",
+        "urgency_level must be routine or urgent.",
+        f"file_name: {file_name}",
+        f"file_category: {category}",
+    ]
+    if user_question and user_question.strip():
+        prompt_lines.append(f"user_question: {user_question.strip()[:500]}")
+    if extracted_text:
+        prompt_lines.append("extracted_text:")
+        prompt_lines.append(extracted_text[:12000])
+    else:
+        prompt_lines.append("No local text extraction was available.")
+
+    user_content: list[dict[str, Any]] = [{"type": "text", "text": "\n".join(prompt_lines)}]
+    if mime_type.startswith("image/"):
+        image_data_url = f"data:{mime_type};base64,{base64.b64encode(document_bytes).decode('ascii')}"
+        user_content.append({"type": "image_url", "image_url": {"url": image_data_url}})
+
+    payload = {
+        "model": model,
+        "temperature": 0.1,
+        "messages": [
+            {"role": "system", "content": "Provide a safe, non-diagnostic medical document summary in strict JSON."},
+            {"role": "user", "content": user_content},
+        ],
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    try:
+        with httpx.Client(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
+            response = client.post(f"{_OPENAI_API_BASE}/chat/completions", headers=headers, json=payload)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Document interpretation provider timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Failed to reach document interpretation provider.") from exc
+
+    if response.status_code >= 400:
+        provider_error = _provider_error_message(response)
+        if response.status_code == 401:
+            raise HTTPException(status_code=503, detail="OpenAI API key was rejected by provider.")
+        if response.status_code == 429:
+            raise HTTPException(status_code=429, detail="Document interpretation provider is rate-limited.")
+        raise HTTPException(status_code=502, detail=f"Document interpretation failed: {provider_error}")
+
+    try:
+        completion_payload = response.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="Document interpretation provider returned invalid JSON.") from exc
+
+    content_text = _coerce_completion_text(completion_payload)
+    parsed = _extract_json_object(content_text)
+    if parsed is None:
+        raise HTTPException(status_code=502, detail="Document interpretation provider returned non-JSON output.")
+    return parsed
+
+
+def _build_document_findings(
+    *,
+    key_findings: list[str],
+    extraction_confidence: float,
+    extraction_method: str,
+    source_label: str,
+) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    for finding in key_findings:
+        lowered = finding.lower()
+        is_abnormal = any(token in lowered for token in ["abnormal", "elevated", "low", "high", "critical"])
+        findings.append(
+            {
+                "finding_type": "document_finding",
+                "label": finding[:180],
+                "value_text": finding[:500],
+                "is_abnormal": is_abnormal,
+                "confidence": extraction_confidence,
+                "provenance": {
+                    "source": source_label,
+                    "extraction_method": extraction_method,
+                },
+            }
+        )
+    return findings
+
+
+def _select_upload(primary: UploadFile | None, fallback: UploadFile | None, *, field_hint: str) -> UploadFile:
+    upload = primary or fallback
+    if upload is None:
+        raise HTTPException(status_code=400, detail=f"Missing multipart file field '{field_hint}'.")
+    return upload
+
+
+def _validate_audio_upload(file_name: str, mime_type: str) -> None:
+    ext = _extension_from_filename(file_name)
+    if mime_type not in _ALLOWED_AUDIO_MIME_TYPES and ext not in _ALLOWED_AUDIO_EXTENSIONS:
+        raise HTTPException(status_code=415, detail="Unsupported audio format.")
+
+
+def _validate_document_upload(file_name: str, mime_type: str) -> None:
+    ext = _extension_from_filename(file_name)
+    if mime_type not in _ALLOWED_DOCUMENT_MIME_TYPES and ext not in _ALLOWED_DOCUMENT_EXTENSIONS:
+        raise HTTPException(status_code=415, detail="Unsupported document/image format.")
 
 
 def _extract_ranked_options_from_history(history: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -1138,8 +1652,14 @@ def actions_execute(payload: ActionExecuteRequest, authorization: str | None = H
 
     params = dict(payload.plan.params)
     session_key = payload.session_key or params.get("session_key")
-    message_text = " ".join(str(v) for v in params.values() if isinstance(v, str))
+    message_text = (payload.message_text or "").strip()
+    if not message_text:
+        message_text = " ".join(str(v) for v in params.values() if isinstance(v, str))
     ctx = _build_ctx(user_id=user_id, session_key=session_key, message_text=message_text, user_confirmed=True)
+    try:
+        container.memory.guard.ensure_session_scope(ctx.session_key)
+    except MemoryPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
         resolved_tool = container.registry.resolve(payload.plan.tool)
@@ -1201,6 +1721,254 @@ def actions_execute(payload: ActionExecuteRequest, authorization: str | None = H
         "message": error_message,
     }
     return {"status": "success" if success else "failure", "result": result_payload}
+
+
+@app.post("/voice/transcribe")
+async def voice_transcribe(
+    audio: UploadFile | None = File(default=None),
+    file: UploadFile | None = File(default=None),
+    session_key: str | None = Form(default=None),
+    language_hint: str | None = Form(default=None),
+    prompt: str | None = Form(default=None),
+    authorization: str | None = Header(default=None),
+):
+    user_id = get_user_id(authorization)
+    ctx = _build_ctx(user_id=user_id, session_key=session_key)
+    try:
+        container.memory.guard.ensure_user_scope(user_id, user_id)
+        container.memory.guard.ensure_session_scope(ctx.session_key)
+    except MemoryPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    upload = _select_upload(audio, file, field_hint="audio")
+    file_name = _normalize_upload_filename(upload, "audio-upload")
+    mime_type = (upload.content_type or "").lower().strip()
+    _validate_audio_upload(file_name, mime_type)
+
+    audio_bytes = await _read_upload_bytes(
+        upload,
+        max_bytes=_MAX_AUDIO_BYTES,
+        too_large_detail=f"Audio file exceeds {_MAX_AUDIO_BYTES // (1024 * 1024)}MB limit.",
+    )
+    transcription = _openai_whisper_transcribe(
+        file_name=file_name,
+        mime_type=mime_type,
+        audio_bytes=audio_bytes,
+        language_hint=language_hint,
+        prompt=prompt,
+    )
+
+    document_id = f"doc_{uuid.uuid4().hex}"
+    container.memory.clinical.create_document_record(
+        document_id=document_id,
+        user_id=user_id,
+        session_key=ctx.session_key,
+        file_name=file_name,
+        mime_type=mime_type or "application/octet-stream",
+        file_category="voice_attachment",
+        storage_ref=f"memory://voice/{document_id}",
+        processing_status="processed",
+    )
+    confidence = max(0.0, min(1.0, float(transcription.get("confidence", 0.8))))
+    transcript_text = str(transcription["transcript_text"])
+    findings = [
+        {
+            "finding_type": "voice_transcript",
+            "label": "transcript",
+            "value_text": transcript_text[:4000],
+            "is_abnormal": False,
+            "confidence": confidence,
+            "provenance": {
+                "source": "openai_whisper",
+                "language_hint": language_hint,
+                "segment_count": len(transcription.get("segments", [])),
+            },
+        }
+    ]
+    container.memory.clinical.store_document_analysis(
+        document_id=document_id,
+        user_id=user_id,
+        session_key=ctx.session_key,
+        processing_status="processed",
+        extraction_confidence=confidence,
+        summary={
+            "analysis_type": "voice_transcription",
+            "transcript_text": transcript_text,
+            "confidence": confidence,
+            "segment_count": len(transcription.get("segments", [])),
+            "provider": "openai_whisper",
+            "language_hint": language_hint,
+        },
+        findings=findings,
+    )
+    return {
+        "document_id": document_id,
+        "transcript_text": transcript_text,
+        "confidence": confidence,
+        "segments": transcription.get("segments", []),
+    }
+
+
+@app.post("/documents/analyze")
+async def documents_analyze(
+    document: UploadFile | None = File(default=None),
+    file: UploadFile | None = File(default=None),
+    session_key: str | None = Form(default=None),
+    file_category: str | None = Form(default=None),
+    question: str | None = Form(default=None),
+    authorization: str | None = Header(default=None),
+):
+    user_id = get_user_id(authorization)
+    ctx = _build_ctx(user_id=user_id, session_key=session_key)
+    try:
+        container.memory.guard.ensure_user_scope(user_id, user_id)
+        container.memory.guard.ensure_session_scope(ctx.session_key)
+    except MemoryPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    upload = _select_upload(document, file, field_hint="document")
+    file_name = _normalize_upload_filename(upload, "document-upload")
+    mime_type = (upload.content_type or "").lower().strip()
+    _validate_document_upload(file_name, mime_type)
+
+    document_bytes = await _read_upload_bytes(
+        upload,
+        max_bytes=_MAX_DOCUMENT_BYTES,
+        too_large_detail=f"Document file exceeds {_MAX_DOCUMENT_BYTES // (1024 * 1024)}MB limit.",
+    )
+    category = _resolve_document_category(file_name, mime_type, file_category)
+
+    document_id = f"doc_{uuid.uuid4().hex}"
+    container.memory.clinical.create_document_record(
+        document_id=document_id,
+        user_id=user_id,
+        session_key=ctx.session_key,
+        file_name=file_name,
+        mime_type=mime_type or "application/octet-stream",
+        file_category=category,
+        storage_ref=f"memory://document/{document_id}",
+        processing_status="queued",
+    )
+
+    extracted_text, extraction_confidence, extraction_method = _extract_document_text(file_name, mime_type, document_bytes)
+    if not extracted_text and not mime_type.startswith("image/"):
+        container.memory.clinical.store_document_analysis(
+            document_id=document_id,
+            user_id=user_id,
+            session_key=ctx.session_key,
+            processing_status="failed",
+            extraction_confidence=0.0,
+            summary={
+                "analysis_type": "document_summary",
+                "error": "unable_to_extract_text",
+                "extraction_method": extraction_method,
+            },
+            findings=[],
+        )
+        raise HTTPException(status_code=422, detail="Unable to extract readable content from the uploaded file.")
+
+    llm_used = True
+    llm_error: str | None = None
+    try:
+        interpretation = _openai_document_interpret(
+            file_name=file_name,
+            mime_type=mime_type,
+            document_bytes=document_bytes,
+            extracted_text=extracted_text,
+            category=category,
+            user_question=question,
+        )
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            container.memory.clinical.store_document_analysis(
+                document_id=document_id,
+                user_id=user_id,
+                session_key=ctx.session_key,
+                processing_status="failed",
+                extraction_confidence=extraction_confidence,
+                summary={
+                    "analysis_type": "document_summary",
+                    "error": str(exc.detail),
+                    "extraction_method": extraction_method,
+                },
+                findings=[],
+            )
+            raise
+        llm_used = False
+        llm_error = str(exc.detail)
+        interpretation = _fallback_document_interpretation(extracted_text, question)
+
+    safe_result = _enforce_document_safety(
+        interpretation=interpretation,
+        extracted_text=extracted_text,
+        category=category,
+    )
+    if llm_error:
+        safe_result["uncertainty_statement"] = (
+            f"{safe_result['uncertainty_statement']} "
+            "Automated fallback was used because model interpretation was unavailable."
+        )
+
+    effective_confidence = extraction_confidence
+    if effective_confidence <= 0.0 and mime_type.startswith("image/"):
+        effective_confidence = 0.65 if llm_used else 0.35
+    findings = _build_document_findings(
+        key_findings=safe_result["key_findings"],
+        extraction_confidence=effective_confidence,
+        extraction_method=extraction_method,
+        source_label="openai_document_interpret" if llm_used else "fallback_summary",
+    )
+    for marker in safe_result["high_risk_flags"]:
+        findings.append(
+            {
+                "finding_type": "risk_marker",
+                "label": marker,
+                "value_text": marker,
+                "is_abnormal": True,
+                "confidence": max(0.5, effective_confidence),
+                "provenance": {
+                    "source": "safety_risk_marker",
+                    "extraction_method": extraction_method,
+                },
+            }
+        )
+    summary_payload = {
+        "analysis_type": "document_summary",
+        "file_category": category,
+        "llm_used": llm_used,
+        "llm_error": llm_error,
+        "extraction_method": extraction_method,
+        "extraction_confidence": round(effective_confidence, 3),
+        "question": (question or "").strip()[:500] if question else None,
+        "result": safe_result,
+    }
+    container.memory.clinical.store_document_analysis(
+        document_id=document_id,
+        user_id=user_id,
+        session_key=ctx.session_key,
+        processing_status="processed",
+        extraction_confidence=effective_confidence,
+        summary=summary_payload,
+        findings=findings,
+    )
+    return {
+        "document_id": document_id,
+        "file_category": category,
+        "key_findings": safe_result["key_findings"],
+        "plain_language_summary": safe_result["plain_language_summary"],
+        "follow_up_questions": safe_result["follow_up_questions"],
+        "safety_framing": {
+            "uncertainty": safe_result["uncertainty_statement"],
+            "guidance": safe_result["safety_guidance"],
+            "urgency_level": safe_result["urgency_level"],
+            "high_risk_flags": safe_result["high_risk_flags"],
+        },
+        "extraction": {
+            "method": extraction_method,
+            "confidence": round(effective_confidence, 3),
+            "llm_used": llm_used,
+        },
+    }
 
 
 @app.post("/chat/stream")
@@ -1286,6 +2054,7 @@ def chat_stream(payload: ChatRequest, authorization: str | None = Header(default
         except MemoryPolicyError as exc:
             yield _emit_sse("error", {"message": str(exc)})
         except Exception as exc:
-            yield _emit_sse("error", {"message": f"Chat pipeline error: {str(exc)}"})
+            print(f"chat_stream error: {exc}")  # noqa: T201
+            yield _emit_sse("error", {"message": "Chat pipeline error."})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

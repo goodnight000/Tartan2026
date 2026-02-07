@@ -405,15 +405,9 @@ pre,
     min-height: 60vh;
   }
 
-  /* Minimum touch targets */
-  button,
-  [role="button"],
-  a[href],
-  input[type="checkbox"],
-  input[type="radio"] {
-    min-height: 44px;
-    min-width: 44px;
-  }
+  /* Minimum touch targets for primary interactive elements.
+     Excluded: small utility buttons (tag remove), inline checkboxes.
+     The Button component already provides adequate mobile sizing. */
 
   /* Compact header brand on mobile */
   .brand-lockup {

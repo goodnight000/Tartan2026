@@ -65,8 +65,11 @@ export default function HomePage() {
             CarePilot combines triage-safe guidance, persistent health memory, and consent-based action workflows so users can move from concern to resolution without guesswork.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Button asChild size="lg" icon={<ArrowRight className="h-4 w-4" />}>
-              <Link href="/login">Enter Command Center</Link>
+            <Button asChild size="lg">
+              <Link href="/login">
+                Enter Command Center
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
             </Button>
             <Button asChild variant="outline" size="lg">
               <Link href="/onboarding">Preview Intake Flow</Link>

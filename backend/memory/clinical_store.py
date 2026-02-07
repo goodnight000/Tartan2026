@@ -13,6 +13,16 @@ def _json_dumps(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
+def _coerce_frequency_per_day(value: Any) -> float:
+    if value is None or value == "":
+        return 1.0
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return numeric if numeric > 0 else 1.0
+
+
 class ClinicalStore:
     def __init__(self, db: SQLiteMemoryDB) -> None:
         self._db = db
@@ -225,7 +235,7 @@ class ClinicalStore:
                         payload.get("name", ""),
                         payload.get("dose_value"),
                         payload.get("dose_unit"),
-                        float(payload.get("frequency_per_day", 1.0)),
+                        _coerce_frequency_per_day(payload.get("frequency_per_day")),
                         payload.get("quantity_dispensed"),
                         payload.get("last_fill_date"),
                         payload.get("pharmacy_name"),
@@ -443,6 +453,128 @@ class ClinicalStore:
                 """,
                 (now, now, token),
             )
+
+    def create_document_record(
+        self,
+        *,
+        document_id: str,
+        user_id: str,
+        session_key: str,
+        file_name: str,
+        mime_type: str,
+        file_category: str,
+        storage_ref: str,
+        processing_status: str = "queued",
+    ) -> dict[str, Any]:
+        now = to_iso(utc_now())
+        with self._db.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO documents (
+                  id, user_id, session_key, file_name, mime_type, file_category, storage_ref,
+                  upload_time, processing_status, extraction_confidence, summary_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    document_id,
+                    user_id,
+                    session_key,
+                    file_name,
+                    mime_type,
+                    file_category,
+                    storage_ref,
+                    now,
+                    processing_status,
+                    0.0,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+        return {
+            "id": document_id,
+            "user_id": user_id,
+            "session_key": session_key,
+            "file_name": file_name,
+            "mime_type": mime_type,
+            "file_category": file_category,
+            "processing_status": processing_status,
+            "upload_time": now,
+        }
+
+    def store_document_analysis(
+        self,
+        *,
+        document_id: str,
+        user_id: str,
+        session_key: str,
+        processing_status: str,
+        extraction_confidence: float,
+        summary: dict[str, Any] | None,
+        findings: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        now = to_iso(utc_now())
+        clamped_confidence = max(0.0, min(1.0, float(extraction_confidence)))
+        with self._db.connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE documents
+                SET processing_status = ?, extraction_confidence = ?, summary_json = ?, updated_at = ?
+                WHERE id = ? AND user_id = ? AND session_key = ?
+                """,
+                (
+                    processing_status,
+                    clamped_confidence,
+                    _json_dumps(summary) if summary is not None else None,
+                    now,
+                    document_id,
+                    user_id,
+                    session_key,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Document record not found for user/session scope.")
+
+            conn.execute(
+                """
+                DELETE FROM extracted_findings
+                WHERE document_id = ? AND user_id = ? AND session_key = ?
+                """,
+                (document_id, user_id, session_key),
+            )
+            for finding in findings:
+                conn.execute(
+                    """
+                    INSERT INTO extracted_findings (
+                      id, document_id, user_id, session_key, finding_type, label, value_text,
+                      unit, reference_range, is_abnormal, confidence, provenance_json, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        uuid.uuid4().hex,
+                        document_id,
+                        user_id,
+                        session_key,
+                        str(finding.get("finding_type") or "observation"),
+                        str(finding.get("label") or "finding"),
+                        finding.get("value_text"),
+                        finding.get("unit"),
+                        finding.get("reference_range"),
+                        1 if bool(finding.get("is_abnormal")) else 0,
+                        max(0.0, min(1.0, float(finding.get("confidence", clamped_confidence)))),
+                        _json_dumps(finding.get("provenance", {})),
+                        now,
+                        now,
+                    ),
+                )
+        return {
+            "document_id": document_id,
+            "processing_status": processing_status,
+            "extraction_confidence": clamped_confidence,
+            "findings_count": len(findings),
+        }
 
     def create_appointment(
         self,

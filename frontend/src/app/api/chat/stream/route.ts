@@ -221,7 +221,8 @@ function joinUrl(baseUrl: string, path: string): string {
 async function openBackendStream(
   backendUrl: string,
   requestBody: Record<string, unknown>,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  signal?: AbortSignal
 ) {
   const preferred = process.env.BACKEND_CHAT_STREAM_PATH || "/chat/stream";
   const candidatePaths = [preferred];
@@ -232,6 +233,7 @@ async function openBackendStream(
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),
+      signal,
     });
 
     if (response.status !== 404 || path === candidatePaths[candidatePaths.length - 1]) {
@@ -297,11 +299,20 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       let emittedToken = false;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+      const onAbort = () => {
+        void reader?.cancel();
+      };
+      req.signal.addEventListener("abort", onAbort, { once: true });
       try {
+        if (req.signal.aborted) {
+          return;
+        }
         const upstream = await openBackendStream(
           backendUrl,
           requestBody,
-          upstreamHeaders
+          upstreamHeaders,
+          req.signal
         );
 
         if (!upstream || !upstream.ok || !upstream.body) {
@@ -317,7 +328,7 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        const reader = upstream.body.getReader();
+        reader = upstream.body.getReader();
         let buffer = "";
 
         while (true) {
@@ -375,6 +386,9 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (error) {
+        if (req.signal.aborted) {
+          return;
+        }
         const message =
           error instanceof Error ? error.message : "Backend stream error";
         controller.enqueue(
@@ -383,6 +397,7 @@ export async function POST(req: NextRequest) {
           })
         );
       } finally {
+        req.signal.removeEventListener("abort", onAbort);
         controller.close();
       }
     },
