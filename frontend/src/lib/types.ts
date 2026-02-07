@@ -40,6 +40,7 @@ export type MedicalProfileV1 = {
     relationship?: "parent" | "child" | "spouse" | "other";
   };
   demographics: {
+    first_name?: string;
     year_of_birth?: number;
     sex_assigned_at_birth?: "female" | "male" | "intersex" | "prefer_not_to_say";
     height_cm?: number;

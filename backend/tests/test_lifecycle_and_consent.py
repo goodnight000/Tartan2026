@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from datetime import timedelta
+
 from memory import canonical_payload_hash
+from memory.time_utils import parse_iso, to_iso, utc_now
 
 
 def _execute(client, headers, tool: str, params: dict, user_confirmed: bool = True):
@@ -9,7 +13,7 @@ def _execute(client, headers, tool: str, params: dict, user_confirmed: bool = Tr
         headers=headers,
         json={
             "plan": {
-                "tier": 2 if tool in {"appointment_book", "medication_refill_request"} else 1,
+                "tier": 2 if tool in {"appointment_book", "medical_purchase", "medication_refill_request"} else 1,
                 "tool": tool,
                 "params": params,
                 "consent_prompt": "Proceed?",
@@ -198,6 +202,357 @@ def test_appointment_book_returns_pending_when_required_fields_missing(client, a
         ).fetchone()
     assert row is not None
     assert row["used_at"] is None
+
+
+def test_appointment_book_defaults_to_live_mode_when_external_web_enabled(
+    client, auth_headers, monkeypatch, backend_module
+):
+    monkeypatch.setenv("CAREPILOT_DISABLE_EXTERNAL_WEB", "false")
+    monkeypatch.setattr(
+        backend_module.container.toolset.browser_automation,
+        "submit_appointment",
+        lambda **_: {
+            "status": "succeeded",
+            "external_ref": "WEB-TEST-12345",
+            "automation": {"title": "Booking Confirmation"},
+        },
+    )
+    base_payload = {
+        "provider_name": "Care Clinic",
+        "slot_datetime": "2026-02-10T09:00:00Z",
+        "location": "Pittsburgh",
+        "booking_url": "https://example.com/book",
+        "full_name": "Jane Doe",
+        "email": "jane@example.com",
+        "phone": "+14125551212",
+        "idempotency_key": "idem-book-default-live",
+    }
+    payload_hash = canonical_payload_hash(base_payload)
+    issue = _execute(
+        client,
+        auth_headers("user-a"),
+        "consent_token_issue",
+        {
+            "action_type": "appointment_book",
+            "payload_hash": payload_hash,
+            "expires_in_seconds": 300,
+        },
+    )
+    token = issue.json()["result"]["token"]
+
+    response = _execute(
+        client,
+        auth_headers("user-a"),
+        "appointment_book",
+        {**base_payload, "consent_token": token, "payload_hash": payload_hash},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["result"]["execution_mode"] == "live"
+    assert body["result"]["confirmation_id"] == "WEB-TEST-12345"
+    assert body["result"]["summary"] == "Booking confirmed"
+    assert body["result"]["lifecycle"] == ["planned", "awaiting_confirmation", "executing", "succeeded"]
+
+
+def test_medical_purchase_requires_consent_token(client, auth_headers):
+    params = {
+        "item_name": "at-home blood test kit",
+        "quantity": 1,
+        "purchase_url": "https://example.com/kit",
+        "mode": "simulated",
+        "idempotency_key": "idem-purchase-missing-token",
+    }
+    response = _execute(client, auth_headers("user-a"), "medical_purchase", params)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "failure"
+    assert body["result"]["errors"][0]["code"] == "missing_consent_token"
+    assert body["result"]["lifecycle"] == ["planned", "awaiting_confirmation", "blocked"]
+
+
+def test_medical_purchase_succeeds_with_consent(client, auth_headers):
+    base_payload = {
+        "item_name": "at-home blood test kit",
+        "quantity": 1,
+        "purchase_url": "https://example.com/kit",
+        "mode": "simulated",
+        "idempotency_key": "idem-purchase-success",
+    }
+    payload_hash = canonical_payload_hash(base_payload)
+    issue = _execute(
+        client,
+        auth_headers("user-a"),
+        "consent_token_issue",
+        {
+            "action_type": "medical_purchase",
+            "payload_hash": payload_hash,
+            "expires_in_seconds": 300,
+        },
+    )
+    assert issue.status_code == 200
+    token = issue.json()["result"]["token"]
+
+    response = _execute(
+        client,
+        auth_headers("user-a"),
+        "medical_purchase",
+        {**base_payload, "consent_token": token, "payload_hash": payload_hash},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["result"]["confirmation_id"].startswith("SIMPUR-")
+    assert body["result"]["lifecycle"] == ["planned", "awaiting_confirmation", "executing", "succeeded"]
+
+
+def test_appointment_book_persists_booking_defaults_key(client, auth_headers, backend_module):
+    base_payload = {
+        "provider_name": "Care Clinic",
+        "slot_datetime": "2026-02-10T09:00:00Z",
+        "location": "Pittsburgh",
+        "mode": "simulated",
+        "full_name": "Jane Doe",
+        "email": "jane@example.com",
+        "phone": "+14125551212",
+        "idempotency_key": "idem-appointment-defaults-key",
+    }
+    payload_hash = canonical_payload_hash(base_payload)
+    token = _execute(
+        client,
+        auth_headers("user-a"),
+        "consent_token_issue",
+        {
+            "action_type": "appointment_book",
+            "payload_hash": payload_hash,
+            "expires_in_seconds": 300,
+        },
+    ).json()["result"]["token"]
+    execute = _execute(
+        client,
+        auth_headers("user-a"),
+        "appointment_book",
+        {**base_payload, "consent_token": token, "payload_hash": payload_hash},
+    )
+    assert execute.status_code == 200
+    assert execute.json()["status"] == "success"
+
+    with backend_module.container.db.connection() as conn:
+        booking_row = conn.execute(
+            "SELECT value_json FROM conversation_preferences WHERE user_id = ? AND key = ? LIMIT 1",
+            ("user-a", "appointment_booking_defaults"),
+        ).fetchone()
+        purchase_row = conn.execute(
+            "SELECT value_json FROM conversation_preferences WHERE user_id = ? AND key = ? LIMIT 1",
+            ("user-a", "medical_purchase_defaults"),
+        ).fetchone()
+
+    assert booking_row is not None
+    booking_defaults = json.loads(booking_row["value_json"])
+    assert booking_defaults["provider_name"] == "Care Clinic"
+    assert booking_defaults["location"] == "Pittsburgh"
+    assert purchase_row is None
+
+
+def test_medical_purchase_persists_purchase_defaults_without_overwriting_booking_defaults(
+    client, auth_headers, backend_module
+):
+    appointment_payload = {
+        "provider_name": "Care Clinic",
+        "slot_datetime": "2026-02-10T09:00:00Z",
+        "location": "Pittsburgh",
+        "mode": "simulated",
+        "full_name": "Jane Doe",
+        "email": "jane@example.com",
+        "phone": "+14125551212",
+        "idempotency_key": "idem-appointment-before-purchase",
+    }
+    appointment_hash = canonical_payload_hash(appointment_payload)
+    appointment_token = _execute(
+        client,
+        auth_headers("user-a"),
+        "consent_token_issue",
+        {
+            "action_type": "appointment_book",
+            "payload_hash": appointment_hash,
+            "expires_in_seconds": 300,
+        },
+    ).json()["result"]["token"]
+    _execute(
+        client,
+        auth_headers("user-a"),
+        "appointment_book",
+        {**appointment_payload, "consent_token": appointment_token, "payload_hash": appointment_hash},
+    )
+
+    purchase_payload = {
+        "item_name": "at-home blood test kit",
+        "quantity": 1,
+        "purchase_url": "https://example.com/kit",
+        "mode": "simulated",
+        "full_name": "Jane Buyer",
+        "email": "buyer@example.com",
+        "phone": "+14125550000",
+        "idempotency_key": "idem-purchase-defaults-key",
+    }
+    purchase_hash = canonical_payload_hash(purchase_payload)
+    purchase_token = _execute(
+        client,
+        auth_headers("user-a"),
+        "consent_token_issue",
+        {
+            "action_type": "medical_purchase",
+            "payload_hash": purchase_hash,
+            "expires_in_seconds": 300,
+        },
+    ).json()["result"]["token"]
+    execute = _execute(
+        client,
+        auth_headers("user-a"),
+        "medical_purchase",
+        {**purchase_payload, "consent_token": purchase_token, "payload_hash": purchase_hash},
+    )
+    assert execute.status_code == 200
+    assert execute.json()["status"] == "success"
+
+    with backend_module.container.db.connection() as conn:
+        booking_row = conn.execute(
+            "SELECT value_json FROM conversation_preferences WHERE user_id = ? AND key = ? LIMIT 1",
+            ("user-a", "appointment_booking_defaults"),
+        ).fetchone()
+        purchase_row = conn.execute(
+            "SELECT value_json FROM conversation_preferences WHERE user_id = ? AND key = ? LIMIT 1",
+            ("user-a", "medical_purchase_defaults"),
+        ).fetchone()
+
+    assert booking_row is not None
+    assert purchase_row is not None
+    booking_defaults = json.loads(booking_row["value_json"])
+    purchase_defaults = json.loads(purchase_row["value_json"])
+    assert booking_defaults["provider_name"] == "Care Clinic"
+    assert booking_defaults["location"] == "Pittsburgh"
+    assert purchase_defaults["full_name"] == "Jane Buyer"
+    assert purchase_defaults["email"] == "buyer@example.com"
+    assert purchase_defaults["phone"] == "+14125550000"
+
+
+def test_consent_token_issue_handles_non_numeric_expiry(client, auth_headers):
+    response = _execute(
+        client,
+        auth_headers("user-a"),
+        "consent_token_issue",
+        {
+            "action_type": "appointment_book",
+            "payload_hash": "abc123",
+            "expires_in_seconds": "not-a-number",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["result"]["token"]
+
+
+def test_refill_remaining_pills_estimate_is_anchored_to_now(client, auth_headers):
+    profile = {
+        "conditions": [],
+        "allergies": [],
+        "meds": [
+            {
+                "id": "med_remaining_now",
+                "name": "MedRemainingNow",
+                "regimen_type": "daily",
+                "quantity_dispensed": 30,
+                "frequency_per_day": 1,
+                "last_fill_date": "2025-01-01T00:00:00Z",
+            }
+        ],
+        "preferences": {},
+        "timezone": "UTC",
+    }
+    profile_response = client.post("/profile", headers=auth_headers("user-a"), json=profile)
+    assert profile_response.status_code == 200
+
+    action_payload = {
+        "medication_name": "MedRemainingNow",
+        "remaining_pills_reported": 10,
+        "idempotency_key": "idem-refill-remaining-now",
+    }
+    payload_hash = canonical_payload_hash(action_payload)
+    issue = _execute(
+        client,
+        auth_headers("user-a"),
+        "consent_token_issue",
+        {
+            "action_type": "medication_refill_request",
+            "payload_hash": payload_hash,
+            "expires_in_seconds": 300,
+        },
+    )
+    token = issue.json()["result"]["token"]
+    execute = _execute(
+        client,
+        auth_headers("user-a"),
+        "medication_refill_request",
+        {**action_payload, "consent_token": token, "payload_hash": payload_hash},
+    )
+    assert execute.status_code == 200
+    body = execute.json()
+    assert body["status"] == "success"
+    runout = parse_iso(body["result"]["runout_estimate"])
+    assert runout is not None
+    assert runout > utc_now()
+
+
+def test_refill_monthly_default_interval_is_around_30_days(client, auth_headers):
+    last_fill = utc_now() - timedelta(days=1)
+    profile = {
+        "conditions": [],
+        "allergies": [],
+        "meds": [
+            {
+                "id": "med_monthly_default",
+                "name": "MedMonthlyDefault",
+                "regimen_type": "monthly",
+                "quantity_dispensed": 2,
+                "frequency_per_day": 1,
+                "last_fill_date": to_iso(last_fill),
+            }
+        ],
+        "preferences": {},
+        "timezone": "UTC",
+    }
+    profile_response = client.post("/profile", headers=auth_headers("user-a"), json=profile)
+    assert profile_response.status_code == 200
+
+    action_payload = {
+        "medication_name": "MedMonthlyDefault",
+        "idempotency_key": "idem-refill-monthly-default",
+    }
+    payload_hash = canonical_payload_hash(action_payload)
+    issue = _execute(
+        client,
+        auth_headers("user-a"),
+        "consent_token_issue",
+        {
+            "action_type": "medication_refill_request",
+            "payload_hash": payload_hash,
+            "expires_in_seconds": 300,
+        },
+    )
+    token = issue.json()["result"]["token"]
+    execute = _execute(
+        client,
+        auth_headers("user-a"),
+        "medication_refill_request",
+        {**action_payload, "consent_token": token, "payload_hash": payload_hash},
+    )
+    assert execute.status_code == 200
+    body = execute.json()
+    assert body["status"] == "success"
+    runout = parse_iso(body["result"]["runout_estimate"])
+    assert runout is not None
+    assert (runout - utc_now()).days >= 45
 
 
 def test_idempotent_replay_returns_original_result_payload(client, auth_headers):

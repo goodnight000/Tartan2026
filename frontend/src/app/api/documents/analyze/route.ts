@@ -153,10 +153,12 @@ export async function POST(req: NextRequest) {
     asNonEmptyString(formData.get("idToken")) ??
     asNonEmptyString(formData.get("id_token"));
 
-    if (idToken && firebaseAdminEnabled) {
-      try {
-        await getAdminAuth().verifyIdToken(idToken);
-      } catch {
+  let userId: string | null = null;
+  if (idToken && firebaseAdminEnabled) {
+    try {
+      const decoded = await getAdminAuth().verifyIdToken(idToken);
+      userId = decoded.uid;
+    } catch {
       // Invalid tokens are forwarded; backend enforces final auth decisions.
     }
   }
@@ -168,6 +170,7 @@ export async function POST(req: NextRequest) {
     Accept: "application/json",
   };
   if (idToken) headers.Authorization = `Bearer ${idToken}`;
+  if (userId) headers["X-User-Id"] = userId;
   const upstream = await fetch(joinUrl(backendUrl, upstreamPath), {
     method: "POST",
     headers,
