@@ -115,6 +115,13 @@ export function ChatPanel() {
   } = useChatStore();
   const { user } = useAuthUser();
 
+  const handleVoiceStatusChange = useCallback(
+    (payload: { message: string; isError: boolean }) => {
+      setVoiceStatus(payload);
+    },
+    []
+  );
+
   const requestDecision = useCallback((request: CareBaseRequest) => {
     return new Promise<AccessDecision>((resolve) => {
       decisionRef.current = resolve;
@@ -510,7 +517,7 @@ export function ChatPanel() {
               setMode("type");
             }}
             showStatusText={false}
-            onStatusChange={(payload) => setVoiceStatus(payload)}
+            onStatusChange={handleVoiceStatusChange}
           />
           <textarea
             ref={textareaRef}
