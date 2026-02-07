@@ -165,9 +165,43 @@ export default function OnboardingPage() {
       ...values,
       meds: values.meds.filter((med) => med.name?.trim()),
     };
+    const timezone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
     try {
       await upsertProfile(user.uid, cleaned);
+
+      let idToken: string;
+      try {
+        idToken = await user.getIdToken();
+      } catch {
+        throw new Error(
+          "Profile saved locally, but backend sync could not verify your session. Please log in again."
+        );
+      }
+
+      const syncResponse = await fetch("/api/profile/upsert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...cleaned,
+          timezone,
+          idToken,
+        }),
+      });
+      if (!syncResponse.ok) {
+        let detail = "Backend profile sync failed.";
+        try {
+          const payload = await syncResponse.json();
+          if (payload && typeof payload.message === "string" && payload.message.trim()) {
+            detail = payload.message.trim();
+          }
+        } catch {
+          // Ignore parse failures and keep generic fallback.
+        }
+        throw new Error(`Profile saved locally, but backend sync failed: ${detail}`);
+      }
+
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(DRAFT_KEY);
       }

@@ -7,6 +7,10 @@ Authoring basis:
 - `/Users/charleszheng/Desktop/Tartan2026/doctor_agent_hackathon_strategy_and_openclaw_reuse.md`
 - OpenClaw codebase at `/Users/charleszheng/Desktop/Tartan2026/app`
 
+> Note (current repo state): references to `/app/...` in this document are historical
+> OpenClaw design anchors. Active runtime code for this repo is in `backend/` and
+> `frontend/`. Do not treat `/app` as the current execution path.
+
 ## 1. Goal and Scope
 
 This document defines the full technical architecture and implementation blueprint for CarePilot on OpenClaw, with enough precision to generate an execution plan without ambiguity.
