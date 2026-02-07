@@ -3,8 +3,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
-  orderBy,
   query,
   setDoc,
   addDoc,
@@ -52,14 +50,12 @@ export async function addSymptomLog(
 }
 
 export async function getSymptomLogs(userId: string, max = 20) {
-  const q = query(
-    symptomCollection,
-    where("user_id", "==", userId),
-    orderBy("created_at", "desc"),
-    limit(max)
-  );
+  const q = query(symptomCollection, where("user_id", "==", userId));
   const snap = await getDocs(q);
-  return snap.docs.map((docSnap) => docSnap.data() as SymptomLog);
+  const items = snap.docs.map((docSnap) => docSnap.data() as SymptomLog);
+  return items
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, max);
 }
 
 export async function addActionLog(
@@ -74,12 +70,10 @@ export async function addActionLog(
 }
 
 export async function getActionLogs(userId: string, max = 20) {
-  const q = query(
-    actionCollection,
-    where("user_id", "==", userId),
-    orderBy("created_at", "desc"),
-    limit(max)
-  );
+  const q = query(actionCollection, where("user_id", "==", userId));
   const snap = await getDocs(q);
-  return snap.docs.map((docSnap) => docSnap.data() as ActionLog);
+  const items = snap.docs.map((docSnap) => docSnap.data() as ActionLog);
+  return items
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, max);
 }
