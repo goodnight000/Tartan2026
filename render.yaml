@@ -4,8 +4,3 @@ services:
     runtime: docker
     dockerContext: .
     dockerfilePath: backend/Dockerfile
-    autoDeployTrigger: commit
-    healthCheckPath: /docs
-    envVars:
-      - key: ALLOW_ANON
-        value: "true"
