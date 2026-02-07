@@ -29,6 +29,8 @@ from carepilot_tools import CarePilotToolset, register_tools
 from memory import MemoryPolicyError, MemoryService, SQLiteMemoryDB, canonical_payload_hash
 from memory.time_utils import parse_iso, to_iso, utc_now
 
+CAREBASE_ONLY = os.getenv("CAREBASE_ONLY", "true").lower() in {"1", "true", "yes"}
+
 
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -158,6 +160,14 @@ class CarePilotApp:
             policy=self.policy,
             hooks=self.hooks,
             lifecycle=ActionLifecycleService(self.db),
+        )
+
+
+def _ensure_not_carebase_only() -> None:
+    if CAREBASE_ONLY:
+        raise HTTPException(
+            status_code=410,
+            detail="Legacy memory subsystem is disabled. Use CareBase instead.",
         )
 
     def _before_tool_call(
@@ -2238,6 +2248,7 @@ def _normalize_action_result(tool_name: str, result_data: dict[str, Any]) -> dic
 
 @app.get("/profile")
 def get_profile(authorization: str | None = Header(default=None), x_user_id: str | None = Header(default=None)):
+    _ensure_not_carebase_only()
     user_id = resolve_user_id(authorization, x_user_id)
     ctx = _build_ctx(user_id=user_id, session_key=None)
     profile = container.memory.clinical_profile_get(
@@ -2264,6 +2275,7 @@ def upsert_profile(
     authorization: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
 ):
+    _ensure_not_carebase_only()
     user_id = resolve_user_id(authorization, x_user_id)
     ctx = _build_ctx(user_id=user_id, session_key=None)
 
@@ -2311,6 +2323,7 @@ def upsert_profile(
 
 @app.get("/reminders")
 def get_reminders(authorization: str | None = Header(default=None), x_user_id: str | None = Header(default=None)):
+    _ensure_not_carebase_only()
     user_id = resolve_user_id(authorization, x_user_id)
     reminders: list[dict[str, Any]] = []
     today = utc_now()
@@ -2341,6 +2354,7 @@ def post_symptoms(
     authorization: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
 ):
+    _ensure_not_carebase_only()
     user_id = resolve_user_id(authorization, x_user_id)
     ctx = _build_ctx(user_id=user_id, session_key=None)
     container.memory.clinical_profile_upsert(
@@ -2367,6 +2381,7 @@ def logs_symptoms(
     authorization: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
 ):
+    _ensure_not_carebase_only()
     user_id = resolve_user_id(authorization, x_user_id)
     return {"items": container.memory.clinical.get_symptom_logs(user_id, limit)}
 
@@ -2377,6 +2392,7 @@ def logs_actions(
     authorization: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
 ):
+    _ensure_not_carebase_only()
     user_id = resolve_user_id(authorization, x_user_id)
     return {"items": container.memory.clinical.get_action_logs(user_id, limit)}
 
@@ -2387,6 +2403,7 @@ def actions_execute(
     authorization: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
 ):
+    _ensure_not_carebase_only()
     user_id = resolve_user_id(authorization, x_user_id)
     if not payload.user_confirmed:
         raise HTTPException(status_code=400, detail="User not confirmed")
@@ -2741,6 +2758,16 @@ def chat_stream(
     authorization: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
 ):
+    if os.getenv("CAREBASE_ONLY", "true").lower() in {"1", "true", "yes"}:
+        def event_stream_disabled():
+            message = (
+                "Chat streaming via backend is disabled. "
+                "Use the CareBase-enabled frontend chat pipeline instead."
+            )
+            yield _emit_sse("error", {"message": message})
+
+        return StreamingResponse(event_stream_disabled(), media_type="text/event-stream")
+
     user_id = resolve_user_id(authorization, x_user_id)
     client_context = payload.client_context or ClientContext()
     ctx = _build_ctx(

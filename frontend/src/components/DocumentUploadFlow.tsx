@@ -178,7 +178,7 @@ export function DocumentUploadFlow({
         setStep("upload");
       }
     },
-    [docType, formatResultForChat, onComplete, sessionKey]
+    [docType, formatResultForChat, onComplete, sessionKey, user]
   );
 
   const handleDrop = useCallback(

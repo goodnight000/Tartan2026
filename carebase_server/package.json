@@ -1,0 +1,30 @@
+{
+  "name": "carebase-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.1.1",
+    "better-sqlite3": "^12.6.2",
+    "next": "16.1.6",
+    "qrcode": "^1.5.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "fake-indexeddb": "^6.0.0",
+    "typescript": "^5",
+    "vitest": "^2.1.5"
+  }
+}

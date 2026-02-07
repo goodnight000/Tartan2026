@@ -13,6 +13,8 @@ import { TrustBadge } from "@/components/TrustBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { SkeletonCard } from "@/components/Skeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { MasterKeyPanel } from "@/components/MasterKeyPanel";
+import { SupportToolsPanel } from "@/components/SupportToolsPanel";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import type { ActionLog, AllergyItem, ConditionItem, MedItem, MedicalProfile, ProcedureItem, SymptomLog } from "@/lib/types";
 import { getActionLogs, getProfile, getSymptomLogs, upsertProfile } from "@/lib/firestore";
+import { pullCloudToLocal, pushAllToCloud } from "@/lib/carebase/cloud";
 import { useAuthUser } from "@/lib/useAuth";
 import { useToast } from "@/components/ui/toast";
 
@@ -144,6 +147,7 @@ export default function ProfilePage() {
   const [draftProfile, setDraftProfile] = useState<MedicalProfile | null>(null);
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("");
 
   useEffect(() => {
     if (!loading && !user) {
@@ -254,6 +258,31 @@ export default function ProfilePage() {
       push({ title: "Restart failed", description: (error as Error).message, variant: "error" });
     } finally {
       setRestarting(false);
+    }
+  };
+
+  const handlePushToCloud = async () => {
+    setSyncStatus("Pushing encrypted records...");
+    try {
+      await pushAllToCloud();
+      setSyncStatus("Cloud backup updated.");
+      push({ title: "Cloud synced", description: "Encrypted backup pushed.", variant: "success" });
+    } catch (error) {
+      setSyncStatus("Cloud push failed.");
+      push({ title: "Cloud push failed", description: (error as Error).message, variant: "error" });
+    }
+  };
+
+  const handlePullFromCloud = async () => {
+    setSyncStatus("Pulling encrypted records...");
+    try {
+      await pullCloudToLocal();
+      await Promise.all([profileQuery.refetch(), symptomsQuery.refetch(), actionsQuery.refetch()]);
+      setSyncStatus("Local cache refreshed from cloud.");
+      push({ title: "Cloud synced", description: "Local CareBase refreshed.", variant: "success" });
+    } catch (error) {
+      setSyncStatus("Cloud pull failed.");
+      push({ title: "Cloud pull failed", description: (error as Error).message, variant: "error" });
     }
   };
 
@@ -614,6 +643,36 @@ export default function ProfilePage() {
               </Button>
             </div>
           </Card>
+
+          {/* CareBase Cloud */}
+          <Card className="reveal space-y-3 p-5" style={{ animationDelay: "230ms" }}>
+            <div>
+              <p className="editorial-eyebrow">CareBase Cloud</p>
+              <h3 className="text-2xl leading-none">Encrypted Backup</h3>
+            </div>
+            <p className="text-sm text-[color:var(--cp-muted)]">
+              Client-side is primary. Cloud stores only encrypted records.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handlePushToCloud}>
+                Push to Cloud
+              </Button>
+              <Button variant="outline" onClick={handlePullFromCloud}>
+                Pull from Cloud
+              </Button>
+            </div>
+            {syncStatus ? (
+              <div className="text-xs text-[color:var(--cp-muted)]">{syncStatus}</div>
+            ) : null}
+          </Card>
+
+          <div className="reveal" style={{ animationDelay: "270ms" }}>
+            <MasterKeyPanel />
+          </div>
+
+          <div className="reveal" style={{ animationDelay: "310ms" }}>
+            <SupportToolsPanel />
+          </div>
         </div>
       </div>
 

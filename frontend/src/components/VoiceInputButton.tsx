@@ -117,7 +117,7 @@ export function VoiceInputButton({
         setProcessing(false);
       }
     },
-    [onTranscript, sessionKey]
+    [onTranscript, sessionKey, user]
   );
 
   const startRecording = useCallback(async () => {

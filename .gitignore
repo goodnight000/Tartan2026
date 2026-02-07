@@ -149,3 +149,4 @@ backend/.venv/
 __pycache__/
 *.pyc
 uv.lock
+.codex/

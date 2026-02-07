@@ -1,0 +1,85 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 19, 18, 0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 24px;
+  padding: 32px;
+  width: min(560px, 100%);
+  box-shadow: 0 24px 60px rgba(16, 19, 18, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header p {
+  color: #5a605f;
+  margin-top: 6px;
+}
+
+.header h3 {
+  font-size: 22px;
+  margin-top: 8px;
+}
+
+.lock {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #d37f54;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.button {
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-size: 14px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.primary {
+  background: #101312;
+  color: #fff;
+}
+
+.secondary {
+  background: #f2f4f1;
+  color: #101312;
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid rgba(16, 19, 18, 0.2);
+}
+
+.context {
+  background: #f8f5ef;
+  border-radius: 16px;
+  padding: 16px;
+  color: #3b4241;
+}
+
+.context pre {
+  white-space: pre-wrap;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  margin-top: 8px;
+}
