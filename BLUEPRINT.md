@@ -1,15 +1,4 @@
 # MedClaw - Personal AI Family Doctor
-## Hackathon Product Blueprint
-
----
-
-## Executive Summary
-
-**MedClaw** is a personal AI family doctor that goes beyond Q&A -- it remembers your complete medical history, proactively watches out for your health, and takes real-world actions on your behalf. Built on top of OpenClaw's proven agent orchestration framework, MedClaw specializes the agentic infrastructure for healthcare: persistent clinical memory, proactive care nudges, and real-world action execution (booking appointments, finding pharmacies, managing medication refills).
-
-This document is the complete ideation blueprint for the hackathon build. It covers naming, features, architecture, user flows, safety considerations, and demo strategy.
-
----
 
 ## Table of Contents
 
@@ -29,44 +18,7 @@ This document is the complete ideation blueprint for the hackathon build. It cov
 
 ---
 
-## 1. Naming
-
-### Primary Recommendation: **MedClaw**
-
-Short, memorable, and directly connects the health domain ("Med") with the underlying platform ("Claw" from OpenClaw). Easy to say, easy to type, easy to brand.
-
-### Alternative Names (Ranked)
-
-| Name | Rationale | Vibe |
-|------|-----------|------|
-| **MedClaw** | Clear domain + platform connection. Sounds like a tool that grabs hold of your health. | Technical, capable |
-| **Cura** | Latin for "care" or "cure." Short, elegant, global feel. | Warm, clinical |
-| **Vigil** | Implies watchfulness -- the AI that keeps watch over your health 24/7. Ties to the proactive monitoring angle. | Protective, always-on |
-| **Healthpaw** | Playful riff on the claw/paw theme. Approachable for consumer audiences. | Friendly, approachable |
-| **Anamnesis** | Medical term for a patient's account of their medical history. Directly references the memory differentiator. | Academic, niche |
-| **DocAgent** | Plain, descriptive, immediately understood. Good for hackathon clarity. | Direct, no-frills |
-| **Praxis** | Greek for "practice" (as in medical practice). Implies action-taking. | Sophisticated |
-| **ClawRx** | Claw + Rx (prescription symbol). Punchy, pharma-flavored. | Bold, medical |
-
-**Recommendation for hackathon:** Use **MedClaw** for clarity during judging. Judges need to instantly understand what your project does, and the name should help, not confuse. "MedClaw" does that work in two syllables.
-
----
-
-## 2. Vision and Problem Statement
-
-### The Problem
-
-Healthcare today suffers from several failures that technology has not yet solved:
-
-1. **Fragmented medical history.** Patients see multiple providers, use different portals, and carry incomplete records. No single system has the full picture. When you visit a new doctor, you start from scratch.
-
-2. **Reactive-only healthcare.** The system waits for you to get sick, show up, and describe symptoms. There is almost no proactive outreach between visits unless you are in a structured care program.
-
-3. **Administrative burden on patients.** Booking appointments, finding in-network providers, managing refills, comparing lab prices -- this work falls on patients who are often unwell, stressed, or time-poor.
-
-4. **Generic advice from AI chatbots.** Existing health AI tools (ChatGPT, symptom checkers) give the same answer to everyone. They do not know your medications, allergies, history, or preferences. Every conversation starts cold.
-
-### The Solution
+## Project Name: MedClaw
 
 MedClaw is a personal AI family doctor that:
 
@@ -75,26 +27,6 @@ MedClaw is a personal AI family doctor that:
 - **Watches out for you.** It proactively reaches out when your medication might be running low, when seasonal health risks apply to your conditions, when it has been too long since a recommended checkup, or when your reported symptoms suggest a trend worth addressing.
 
 - **Acts for you.** With your explicit approval, it can search for nearby labs, compare appointment availability, book appointments through web or phone, find pharmacies with your medication in stock, and handle routine healthcare logistics.
-
-### Target Audience
-
-**Primary:** Adults (25-65) managing their own health or the health of family members who want a persistent, intelligent health companion. This includes:
-
-- People managing chronic conditions (diabetes, hypertension, asthma) who need ongoing monitoring
-- Parents tracking pediatric health milestones, vaccinations, and sick visits
-- Caregivers managing health logistics for elderly parents
-- Health-conscious individuals who want proactive wellness guidance
-
-**Secondary:** Anyone frustrated by the fragmented, reactive nature of healthcare administration.
-
-### Success Metrics (Hackathon)
-
-- Judges can see a live demo where the AI remembers a patient's history across conversations
-- Judges can see the AI proactively surface a health insight unprompted
-- Judges can see the AI take a real-world action (book an appointment or find a pharmacy)
-- The demo tells a compelling story in under 5 minutes
-
----
 
 ## 3. MVP Features vs Future Roadmap
 

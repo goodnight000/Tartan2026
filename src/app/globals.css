@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --ink: #0b1120;
+  --muted: #475569;
+  --accent: #0f766e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: radial-gradient(circle at top, #e2e8f0 0%, #f8fafc 40%, #ffffff 100%);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
+}
