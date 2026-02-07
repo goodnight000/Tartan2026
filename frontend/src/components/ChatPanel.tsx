@@ -201,6 +201,22 @@ export function ChatPanel() {
     }
   }, [input]);
 
+  // Sync browser-restored textarea value (after refresh/back) into React state.
+  useEffect(() => {
+    const syncRestoredValue = () => {
+      const restored = textareaRef.current?.value ?? "";
+      if (!restored.trim()) return;
+      setInput((current) => (current.trim().length > 0 ? current : restored));
+    };
+    syncRestoredValue();
+    const rafId = window.requestAnimationFrame(syncRestoredValue);
+    window.addEventListener("pageshow", syncRestoredValue);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener("pageshow", syncRestoredValue);
+    };
+  }, []);
+
   useEffect(() => {
     if (!attachmentMenuOpen) return;
     const handlePointerDown = (event: MouseEvent) => {
@@ -481,12 +497,16 @@ export function ChatPanel() {
   };
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    const draft = input.trim().length > 0 ? input : (textareaRef.current?.value ?? "");
+    if (!draft.trim()) return;
     setAttachmentMenuOpen(false);
-    const content = input.trim();
+    const content = draft.trim();
     const priorMessages = useChatStore.getState().messages;
     const historyForRequest = [...priorMessages, { role: "user" as const, content }];
     setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.value = "";
+    }
     appendMessage({ role: "user", content });
     shouldAutoscrollRef.current = true;
     if (pending && activeRequestRef.current) {
