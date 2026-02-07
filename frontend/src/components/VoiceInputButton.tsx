@@ -27,14 +27,19 @@ export function VoiceInputButton({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const onStatusChangeRef = useRef(onStatusChange);
   const { user } = useAuthUser();
 
   useEffect(() => {
-    onStatusChange?.({
+    onStatusChangeRef.current = onStatusChange;
+  }, [onStatusChange]);
+
+  useEffect(() => {
+    onStatusChangeRef.current?.({
       message: errorText || statusText,
       isError: Boolean(errorText),
     });
-  }, [errorText, onStatusChange, statusText]);
+  }, [errorText, statusText]);
 
   useEffect(() => {
     return () => {

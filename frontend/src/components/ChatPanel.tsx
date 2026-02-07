@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +23,6 @@ import { consumeSSE } from "@/lib/sse";
 import { pullCloudToLocal } from "@/lib/carebase/cloud";
 
 const LOCATION_STORAGE_KEY = "carepilot.location_text";
-const DEBUG_SHOW_RAW_KEY = "carepilot.debug_show_raw";
 
 const EMERGENCY_KEYWORDS = [
   "call 911", "emergency room", "go to the er", "chest pain",
@@ -76,11 +74,30 @@ function formatTimestamp(ts: number): string {
 }
 
 function stripCareBaseTags(text: string): string {
-  return text
-    .replace(/<carebase-[^>]+>[\s\S]*?<\/carebase-[^>]+>/gi, " ")
-    .replace(/<carebase-list>\s*<\/carebase-list>/gi, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  const lower = text.toLowerCase();
+  let out = "";
+  let i = 0;
+
+  while (i < text.length) {
+    const openIndex = lower.indexOf("<carebase-", i);
+    if (openIndex === -1) {
+      out += text.slice(i);
+      break;
+    }
+    out += text.slice(i, openIndex);
+
+    const closeStart = lower.indexOf("</carebase-", openIndex);
+    if (closeStart === -1) {
+      break;
+    }
+    const closeEnd = lower.indexOf(">", closeStart);
+    if (closeEnd === -1) {
+      break;
+    }
+    i = closeEnd + 1;
+  }
+
+  return out.replace(/\s{2,}/g, " ").trim();
 }
 
 export function ChatPanel() {
@@ -91,8 +108,6 @@ export function ChatPanel() {
   const [voiceStatus, setVoiceStatus] = useState<{ message: string; isError: boolean } | null>(
     null
   );
-  const [showRawOutput, setShowRawOutput] = useState(false);
-  const searchParams = useSearchParams();
   const [guardRequest, setGuardRequest] = useState<CareBaseRequest | null>(null);
   const [guardOpen, setGuardOpen] = useState(false);
   const decisionRef = useRef<((decision: AccessDecision) => void) | null>(null);
@@ -158,19 +173,6 @@ export function ChatPanel() {
     void pullCloudToLocal();
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const queryValue = searchParams?.get("debug_raw");
-    if (queryValue) {
-      const normalized = queryValue.toLowerCase();
-      const enabled = normalized === "1" || normalized === "true" || normalized === "yes";
-      setShowRawOutput(enabled);
-      return;
-    }
-    const stored = window.localStorage.getItem(DEBUG_SHOW_RAW_KEY);
-    setShowRawOutput(stored === "1");
-  }, [searchParams]);
-
   const modeHint = useMemo(() => {
     if (mode === "document") {
       return "Upload lab or imaging reports for extraction and plain-language interpretation.";
@@ -190,8 +192,8 @@ export function ChatPanel() {
       "Profiles: use <carebase-store: profile:{user_id}> with JSON.",
       "When storing JSON, output ONLY valid JSON (no prose, no code fences).",
       "Read via <carebase-fetch>profile:{user_id}</carebase-fetch> and similar keys.",
-      "Check-ins: append to <carebase-store: symptom_logs:{user_id}> as JSON array.",
-      "Actions/refills: append to <carebase-store: action_logs:{user_id}> as JSON array with action_type.",
+      "Check-ins: append to <carebase-store: symptom_logs:{user_id}> as JSON array; never overwrite existing logs.",
+      "Actions/refills: append to <carebase-store: action_logs:{user_id}> as JSON array with action_type; never overwrite existing logs.",
       "Replace {user_id} with the current user id above when forming keys.",
       "If you request CareBase data, STOP your response and wait for the CareBase result before answering.",
       "When you need data, output ONLY the CareBase fetch tag and no other text.",
@@ -200,7 +202,7 @@ export function ChatPanel() {
       "Entry guide: symptom_logs:{user_id} = array of symptom entries; action_logs:{user_id} = array of action/refill entries.",
       "Maintain an index of custom keys you create in <carebase-store: entry_index:{user_id}> as JSON mapping of key -> description.",
       "Profile format (JSON, arrays of objects): {consent:{health_data_use,accepted_at,privacy_version},profile_mode:{managing_for,dependent_label,relationship},demographics:{first_name,year_of_birth,sex_assigned_at_birth,height_cm,weight_kg},lifestyle:{smoking_status,alcohol_use,activity_level},conditions:[{name,diagnosed_year,under_treatment}],procedures:[{name,approximate_year}],meds:[{name,dose,frequency_per_day,cadence,start_date,last_fill_date,refill_days}],allergies:[{allergen,reaction,category}],family_history:{heart_disease,stroke,diabetes,cancer,hypertension,none_or_unsure},preferences:{radius_miles,preferred_pharmacy,preferred_days,appointment_windows,provider_gender_preference,care_priority},reminders:{med_runout,checkup_due,followup_nudges,reminder_mode,proactive_state,quiet_hours:{start,end}},onboarding:{completed,completed_at,step_last_seen,version},updated_at}.",
-      "Symptom log format (array items): {created_at, symptom_text, severity, onset_time, notes}. Use ISO timestamps.",
+      "Symptom log format (array items): {created_at, symptom_text, severity, onset_time, notes}. Severity must be an integer (0-10). Use ISO timestamps.",
       "Action log format (array items): {created_at, action_type, status}. Use ISO timestamps.",
     ].join("\n");
   };
@@ -233,7 +235,6 @@ export function ChatPanel() {
 
     let fullContent = "";
     let streamed = false;
-    let sawCarebaseStart = false;
     await consumeSSE(response, (event) => {
       if (event.event === "token") {
         const delta =
@@ -243,18 +244,7 @@ export function ChatPanel() {
         if (delta) {
           streamed = true;
           fullContent += delta;
-          if (!showRawOutput && !sawCarebaseStart) {
-            const tagIndex = delta.indexOf("<carebase-");
-            if (tagIndex !== -1) {
-              sawCarebaseStart = true;
-              const visible = delta.slice(0, tagIndex);
-              if (visible) appendAssistantDelta(visible);
-            } else {
-              appendAssistantDelta(delta);
-            }
-          } else if (showRawOutput) {
-            appendAssistantDelta(delta);
-          }
+          appendAssistantDelta(delta);
         }
       }
       if (event.event === "message") {
@@ -298,15 +288,7 @@ export function ChatPanel() {
         if (!reply.trim()) break;
 
         if (!streamed) {
-          if (showRawOutput) {
-            appendMessage({ role: "assistant", content: reply });
-          } else {
-            const tagIndex = reply.indexOf("<carebase-");
-            const visible = tagIndex === -1 ? reply : reply.slice(0, tagIndex).trim();
-            if (visible) {
-              appendMessage({ role: "assistant", content: visible });
-            }
-          }
+          appendMessage({ role: "assistant", content: reply });
         } else {
           finalizeStreaming();
         }
@@ -404,20 +386,6 @@ export function ChatPanel() {
             <h2 className="text-3xl leading-none">Clinical Dialogue</h2>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={showRawOutput ? "default" : "ghost"}
-              onClick={() => {
-                const next = !showRawOutput;
-                setShowRawOutput(next);
-                if (typeof window !== "undefined") {
-                  window.localStorage.setItem(DEBUG_SHOW_RAW_KEY, next ? "1" : "0");
-                }
-              }}
-            >
-              {showRawOutput ? "Hide Raw" : "Show Raw"}
-            </Button>
             {triageLevel && <TriageBadge level={triageLevel} />}
             {!triageLevel && <span className="status-chip status-chip--info">Triage Active</span>}
           </div>
@@ -471,7 +439,9 @@ export function ChatPanel() {
                   }`}
                 >
                   {msg.role === "assistant" ? (
-                    <Markdown content={showRawOutput ? msg.content : stripCareBaseTags(msg.content)} />
+                    <Markdown
+                      content={stripCareBaseTags(msg.content)}
+                    />
                   ) : (
                     msg.content
                   )}
