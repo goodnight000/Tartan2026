@@ -25,7 +25,6 @@ export function MobileNav() {
         >
           <Link href="/app" onClick={() => setOpen(false)}>Command Center</Link>
           <Link href="/profile" onClick={() => setOpen(false)}>Trust Center</Link>
-          <Link href="/onboarding" onClick={() => setOpen(false)}>Intake</Link>
         </nav>
       )}
     </>

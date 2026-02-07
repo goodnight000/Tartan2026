@@ -706,6 +706,15 @@ export default function OnboardingPage() {
       const profile = await getProfile(user.uid);
       if (cancelled) return;
       if (profile) {
+        if (profile.onboarding?.completed) {
+          push({
+            title: "Intake already completed",
+            description: "Update details in the Trust Center.",
+            variant: "info",
+          });
+          router.replace("/profile");
+          return;
+        }
         setExistingProfile(profile);
         skipAutosaveRef.current = true;
         form.reset({
@@ -772,7 +781,7 @@ export default function OnboardingPage() {
     return () => {
       cancelled = true;
     };
-  }, [form, user]);
+  }, [form, push, router, user]);
 
   useEffect(() => {
     const state = loadOnboardingState();

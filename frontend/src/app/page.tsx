@@ -72,7 +72,7 @@ export default function HomePage() {
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <Link href="/onboarding">Preview Intake Flow</Link>
+              <Link href="/profile">Visit Trust Center</Link>
             </Button>
           </div>
         </div>
