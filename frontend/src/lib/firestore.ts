@@ -8,15 +8,15 @@ import {
   addDoc,
   where
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, firebaseEnabled } from "@/lib/firebase";
 import type { ActionLog, MedicalProfile, SymptomLog } from "@/lib/types";
-
-const profileCollection = collection(db, "medical_profiles");
-const symptomCollection = collection(db, "symptom_logs");
-const actionCollection = collection(db, "action_logs");
+import * as localDb from "@/lib/indexeddb";
 
 export async function getProfile(userId: string): Promise<MedicalProfile | null> {
-  const ref = doc(profileCollection, userId);
+  if (!firebaseEnabled || !db) {
+    return localDb.getProfile(userId);
+  }
+  const ref = doc(collection(db, "medical_profiles"), userId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
   return snap.data() as MedicalProfile;
@@ -26,7 +26,11 @@ export async function upsertProfile(
   userId: string,
   payload: Omit<MedicalProfile, "user_id" | "updated_at">
 ): Promise<void> {
-  const ref = doc(profileCollection, userId);
+  if (!firebaseEnabled || !db) {
+    await localDb.upsertProfile(userId, payload);
+    return;
+  }
+  const ref = doc(collection(db, "medical_profiles"), userId);
   await setDoc(
     ref,
     {
@@ -42,7 +46,11 @@ export async function addSymptomLog(
   userId: string,
   payload: Omit<SymptomLog, "created_at">
 ): Promise<void> {
-  await addDoc(symptomCollection, {
+  if (!firebaseEnabled || !db) {
+    await localDb.addSymptomLog(userId, payload);
+    return;
+  }
+  await addDoc(collection(db, "symptom_logs"), {
     ...payload,
     user_id: userId,
     created_at: new Date().toISOString()
@@ -50,7 +58,15 @@ export async function addSymptomLog(
 }
 
 export async function getSymptomLogs(userId: string, max = 20) {
-  const q = query(symptomCollection, where("user_id", "==", userId));
+  if (!firebaseEnabled || !db) {
+    return localDb.getSymptomLogs(userId, max);
+  }
+  const q = query(
+    collection(db, "symptom_logs"),
+    where("user_id", "==", userId),
+    orderBy("created_at", "desc"),
+    limit(max)
+  );
   const snap = await getDocs(q);
   const items = snap.docs.map((docSnap) => docSnap.data() as SymptomLog);
   return items
@@ -62,7 +78,11 @@ export async function addActionLog(
   userId: string,
   payload: Omit<ActionLog, "created_at">
 ): Promise<void> {
-  await addDoc(actionCollection, {
+  if (!firebaseEnabled || !db) {
+    await localDb.addActionLog(userId, payload);
+    return;
+  }
+  await addDoc(collection(db, "action_logs"), {
     ...payload,
     user_id: userId,
     created_at: new Date().toISOString()
@@ -70,7 +90,19 @@ export async function addActionLog(
 }
 
 export async function getActionLogs(userId: string, max = 20) {
+<<<<<<< HEAD
   const q = query(actionCollection, where("user_id", "==", userId));
+=======
+  if (!firebaseEnabled || !db) {
+    return localDb.getActionLogs(userId, max);
+  }
+  const q = query(
+    collection(db, "action_logs"),
+    where("user_id", "==", userId),
+    orderBy("created_at", "desc"),
+    limit(max)
+  );
+>>>>>>> 7028dd1 (feat: fallback to local storage when FireBase is not configured)
   const snap = await getDocs(q);
   const items = snap.docs.map((docSnap) => docSnap.data() as ActionLog);
   return items

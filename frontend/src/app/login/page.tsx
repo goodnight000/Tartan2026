@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TrustBadge } from "@/components/TrustBadge";
 import { useToast } from "@/components/ui/toast";
-import { auth } from "@/lib/firebase";
+import { auth, firebaseEnabled } from "@/lib/firebase";
+import { ensureLocalUser } from "@/lib/auth-local";
 import { getProfile } from "@/lib/firestore";
 import {
   createUserWithEmailAndPassword,
@@ -28,6 +29,16 @@ export default function LoginPage() {
   const emailId = useId();
   const passwordId = useId();
 
+  const enterLocalMode = () => {
+    ensureLocalUser();
+    push({
+      title: "Local mode enabled",
+      description: "Using on-device storage until Firebase is configured.",
+      variant: "info",
+    });
+    router.push("/onboarding");
+  };
+
   const validate = () => {
     const errs: typeof errors = {};
     if (!email.includes("@")) errs.email = "Please enter a valid email address";
@@ -37,6 +48,10 @@ export default function LoginPage() {
   };
 
   const handleLogin = async () => {
+    if (!firebaseEnabled || !auth) {
+      enterLocalMode();
+      return;
+    }
     if (!validate()) return;
     setPending(true);
     try {
@@ -57,6 +72,10 @@ export default function LoginPage() {
   };
 
   const handleSignup = async () => {
+    if (!firebaseEnabled || !auth) {
+      enterLocalMode();
+      return;
+    }
     if (!validate()) return;
     setPending(true);
     try {
@@ -74,6 +93,10 @@ export default function LoginPage() {
 
   const handleReset = async () => {
     try {
+      if (!firebaseEnabled || !auth) {
+        push({ title: "Firebase not configured", description: "Password reset is unavailable in local mode.", variant: "warning" });
+        return;
+      }
       if (!email) {
         push({ title: "Enter Email First", variant: "warning" });
         return;
@@ -122,104 +145,115 @@ export default function LoginPage() {
             <h2 className="text-4xl leading-none">Welcome Back</h2>
           </div>
         </div>
-        <Tabs defaultValue="login">
-          <TabsList className="w-full">
-            <TabsTrigger value="login" className="flex-1">
-              Log In
-            </TabsTrigger>
-            <TabsTrigger value="signup" className="flex-1">
-              Create Account
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="login">
-            <form
-              className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleLogin();
-              }}
-            >
-              <div className="space-y-2">
-                <Label htmlFor={emailId}>Email</Label>
-                <Input
-                  id={emailId}
-                  type="email"
-                  value={email}
-                  onChange={(event) => { setEmail(event.target.value); setErrors((e) => ({ ...e, email: undefined })); }}
-                  required
-                  aria-invalid={errors.email ? "true" : undefined}
-                  aria-describedby={errors.email ? `${emailId}-error` : undefined}
-                />
-                {errors.email && (
-                  <p id={`${emailId}-error`} className="text-xs text-[color:var(--cp-danger)]">{errors.email}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={passwordId}>Password</Label>
-                <Input
-                  id={passwordId}
-                  type="password"
-                  value={password}
-                  onChange={(event) => { setPassword(event.target.value); setErrors((e) => ({ ...e, password: undefined })); }}
-                  required
-                  aria-invalid={errors.password ? "true" : undefined}
-                  aria-describedby={errors.password ? `${passwordId}-error` : undefined}
-                />
-                {errors.password && (
-                  <p id={`${passwordId}-error`} className="text-xs text-[color:var(--cp-danger)]">{errors.password}</p>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                <Button type="submit" loading={pending}>
-                  Log In
-                </Button>
-                <Button type="button" variant="ghost" onClick={handleReset}>
-                  Forgot Password
-                </Button>
-              </div>
-            </form>
-          </TabsContent>
-
-          <TabsContent value="signup">
-            <form
-              className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleSignup();
-              }}
-            >
-              <div className="space-y-2">
-                <Label htmlFor={`${emailId}-signup`}>Email</Label>
-                <Input
-                  id={`${emailId}-signup`}
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={`${passwordId}-signup`}>Password</Label>
-                <Input
-                  id={`${passwordId}-signup`}
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                />
-                {password.length > 0 && password.length < 6 && (
-                  <p className="text-xs text-[color:var(--cp-warn)]">
-                    {password.length < 6 ? "Too short — need at least 6 characters" : ""}
-                  </p>
-                )}
-              </div>
-              <Button type="submit" loading={pending}>
+        {!firebaseEnabled ? (
+          <div className="space-y-4 rounded-2xl border border-[color:var(--cp-line)] bg-white/70 p-4">
+            <p className="text-sm text-[color:var(--cp-muted)]">
+              Firebase is not configured. Continue in local mode and store data on this device.
+            </p>
+            <Button type="button" onClick={enterLocalMode}>
+              Continue in Local Mode
+            </Button>
+          </div>
+        ) : (
+          <Tabs defaultValue="login">
+            <TabsList className="w-full">
+              <TabsTrigger value="login" className="flex-1">
+                Log In
+              </TabsTrigger>
+              <TabsTrigger value="signup" className="flex-1">
                 Create Account
-              </Button>
-            </form>
-          </TabsContent>
-        </Tabs>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="login">
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleLogin();
+                }}
+              >
+                <div className="space-y-2">
+                  <Label htmlFor={emailId}>Email</Label>
+                  <Input
+                    id={emailId}
+                    type="email"
+                    value={email}
+                    onChange={(event) => { setEmail(event.target.value); setErrors((e) => ({ ...e, email: undefined })); }}
+                    required
+                    aria-invalid={errors.email ? "true" : undefined}
+                    aria-describedby={errors.email ? `${emailId}-error` : undefined}
+                  />
+                  {errors.email && (
+                    <p id={`${emailId}-error`} className="text-xs text-[color:var(--cp-danger)]">{errors.email}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={passwordId}>Password</Label>
+                  <Input
+                    id={passwordId}
+                    type="password"
+                    value={password}
+                    onChange={(event) => { setPassword(event.target.value); setErrors((e) => ({ ...e, password: undefined })); }}
+                    required
+                    aria-invalid={errors.password ? "true" : undefined}
+                    aria-describedby={errors.password ? `${passwordId}-error` : undefined}
+                  />
+                  {errors.password && (
+                    <p id={`${passwordId}-error`} className="text-xs text-[color:var(--cp-danger)]">{errors.password}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button type="submit" loading={pending}>
+                    Log In
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={handleReset}>
+                    Forgot Password
+                  </Button>
+                </div>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="signup">
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleSignup();
+                }}
+              >
+                <div className="space-y-2">
+                  <Label htmlFor={`${emailId}-signup`}>Email</Label>
+                  <Input
+                    id={`${emailId}-signup`}
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`${passwordId}-signup`}>Password</Label>
+                  <Input
+                    id={`${passwordId}-signup`}
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                  />
+                  {password.length > 0 && password.length < 6 && (
+                    <p className="text-xs text-[color:var(--cp-warn)]">
+                      {password.length < 6 ? "Too short — need at least 6 characters" : ""}
+                    </p>
+                  )}
+                </div>
+                <Button type="submit" loading={pending}>
+                  Create Account
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
+        )}
       </Card>
     </div>
   );

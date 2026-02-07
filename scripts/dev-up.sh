@@ -16,8 +16,12 @@ else
   rm -f "$BACKEND_PID_FILE"
   (
     cd "$BACKEND_DIR"
+    PYTHON_BIN="$BACKEND_DIR/.venv/bin/python"
+    if [[ ! -x "$PYTHON_BIN" ]]; then
+      PYTHON_BIN="python3"
+    fi
     nohup env ALLOW_ANON="${ALLOW_ANON:-true}" \
-      python3 -m uvicorn main:app --host 127.0.0.1 --port 8000 \
+      "$PYTHON_BIN" -m uvicorn main:app --host 127.0.0.1 --port 8000 \
       >"$BACKEND_LOG" 2>&1 &
     echo $! >"$BACKEND_PID_FILE"
   )
@@ -29,9 +33,7 @@ if [[ -f "$FRONTEND_PID_FILE" ]] && kill -0 "$(cat "$FRONTEND_PID_FILE")" 2>/dev
 else
   rm -f "$FRONTEND_PID_FILE"
   if [[ ! -f "$FRONTEND_DIR/.env.local" ]] && [[ -z "${NEXT_PUBLIC_FIREBASE_API_KEY:-}" ]]; then
-    echo "Missing Firebase frontend config."
-    echo "Set NEXT_PUBLIC_FIREBASE_* env vars in your shell or create frontend/.env.local first."
-    exit 1
+    echo "Firebase frontend config not detected. Starting in local IndexedDB mode."
   fi
   (
     cd "$FRONTEND_DIR"

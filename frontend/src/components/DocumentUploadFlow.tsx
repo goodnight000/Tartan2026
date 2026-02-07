@@ -5,7 +5,8 @@ import { FileText, Upload, CheckCircle, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkeletonCard } from "@/components/Skeleton";
 import { cn } from "@/lib/utils";
-import { auth } from "@/lib/firebase";
+import { useAuthUser } from "@/lib/useAuth";
+import { getIdTokenMaybe } from "@/lib/auth-helpers";
 
 type UploadStep = "select" | "upload" | "processing" | "done";
 
@@ -78,6 +79,7 @@ export function DocumentUploadFlow({
   const [summary, setSummary] = useState("");
   const [questions, setQuestions] = useState<string[]>([]);
   const [errorText, setErrorText] = useState("");
+  const { user } = useAuthUser();
 
   const formatResultForChat = useCallback(
     (type: string, name: string, resultSummary: string, followUpQuestions: string[]) => {
@@ -119,15 +121,7 @@ export function DocumentUploadFlow({
       setQuestions([]);
 
       try {
-        let idToken: string | undefined;
-        const user = auth.currentUser;
-        if (user) {
-          try {
-            idToken = await user.getIdToken();
-          } catch {
-            // noop
-          }
-        }
+        const idToken = await getIdTokenMaybe(user);
 
         const formData = new FormData();
         formData.append("file", file, file.name);

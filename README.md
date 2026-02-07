@@ -37,6 +37,8 @@ uv sync
 uv run uvicorn main:app --reload --port 8000
 ```
 
+Note: `scripts/dev-up.sh` will prefer `backend/.venv/bin/python` when that venv exists.
+
 Optional env:
 ```
 ALLOW_ANON=true

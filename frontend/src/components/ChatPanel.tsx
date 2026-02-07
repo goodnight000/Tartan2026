@@ -16,8 +16,9 @@ import { consumeSSE } from "@/lib/sse";
 import { useChatStore } from "@/store/chat";
 import { useToast } from "@/components/ui/toast";
 import type { ActionPlan, ActionResult, TriageLevel } from "@/lib/types";
-import { auth } from "@/lib/firebase";
 import { addActionLog } from "@/lib/firestore";
+import { useAuthUser } from "@/lib/useAuth";
+import { getIdTokenMaybe } from "@/lib/auth-helpers";
 
 const LOCATION_STORAGE_KEY = "carepilot.location_text";
 
@@ -92,6 +93,7 @@ export function ChatPanel() {
     triageLevel,
     setTriageLevel,
   } = useChatStore();
+  const { user } = useAuthUser();
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -127,10 +129,7 @@ export function ChatPanel() {
     setThinking(true);
     try {
       let idToken: string | undefined;
-      const user = auth.currentUser;
-      if (user) {
-        try { idToken = await user.getIdToken(); } catch { /* noop */ }
-      }
+      idToken = await getIdTokenMaybe(user);
 
       const requestBody = JSON.stringify({
         message: content,
@@ -215,10 +214,7 @@ export function ChatPanel() {
     setActionPending(true);
     try {
       let idToken: string | undefined;
-      const user = auth.currentUser;
-      if (user) {
-        try { idToken = await user.getIdToken(); } catch { /* noop */ }
-      }
+      idToken = await getIdTokenMaybe(user);
       const latestUserMessage = [...useChatStore.getState().messages]
         .reverse()
         .find((msg) => msg.role === "user")?.content;
@@ -241,8 +237,8 @@ export function ChatPanel() {
       setActionResult(data);
       const resultText = formatActionResult(actionPlan.tool, data);
       appendMessage({ role: "assistant", content: resultText });
-      if (auth.currentUser) {
-        await addActionLog(auth.currentUser.uid, {
+      if (user?.uid) {
+        await addActionLog(user.uid, {
           action_type: actionPlan.tool,
           status: data.status,
         });

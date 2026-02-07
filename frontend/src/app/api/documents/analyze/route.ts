@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminAuth } from "@/lib/firebase-admin";
+import { firebaseAdminEnabled, getAdminAuth } from "@/lib/firebase-admin";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -153,10 +153,10 @@ export async function POST(req: NextRequest) {
     asNonEmptyString(formData.get("idToken")) ??
     asNonEmptyString(formData.get("id_token"));
 
-  if (idToken) {
-    try {
-      await getAdminAuth().verifyIdToken(idToken);
-    } catch {
+    if (idToken && firebaseAdminEnabled) {
+      try {
+        await getAdminAuth().verifyIdToken(idToken);
+      } catch {
       // Invalid tokens are forwarded; backend enforces final auth decisions.
     }
   }
