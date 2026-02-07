@@ -2,24 +2,37 @@
 
 ## Active Directories
 
-- `frontend/`: Next.js app (user-facing UI)
-- `backend/`: FastAPI app (agent orchestration + tools + memory)
+- `frontend/`
+- `backend/`
+- `carebase_server/`: CareBase memory service
 
-`app/` is legacy OpenClaw-era material and is not part of the active dev/runtime path.
+## Tech Stack
+
+- Frontend: Next.js (App Router), React, TypeScript, Tailwind CSS, Framer Motion, TanStack Query, React Hook Form + Zod, Lucide Icons
+- Backend: FastAPI, Uvicorn, Pydantic, httpx, Python 3.10+
+- Auth: Firebase Auth (optional)
+- Data/Storage: SQLite (local), CareBase (Next.js + better-sqlite3)
+- Tooling: npm, uv, Docker (optional)
 
 ## Quick Start
 
-### Docker (recommended)
+### Scripts (recommended)
 
 ```bash
-docker compose up --build
+./scripts/dev-up.sh
 ```
 
 Frontend: http://localhost:3000  
 Backend: http://localhost:8000/docs  
 CareBase: http://localhost:3100
 
-### Local dev (optional)
+To stop:
+
+```bash
+./scripts/dev-down.sh
+```
+
+### Local dev (manual)
 
 ```bash
 cd backend
@@ -32,6 +45,18 @@ uv run uvicorn main:app --reload --port 8000
 cd frontend
 npm install
 npm run dev
+```
+
+### Docker (optional)
+
+```bash
+docker compose up --build
+```
+
+To stop:
+
+```bash
+docker compose down
 ```
 
 Create `frontend/.env.local` with:
@@ -64,12 +89,8 @@ Backend env bootstrap now reads:
 Note: `scripts/dev-up.sh` will prefer `backend/.venv/bin/python` when that venv exists.
 `app/.env` is no longer loaded by backend runtime.
 
-Docker:
-  docker compose up --build
-  docker compose down
+## Optional Env
 
-
-Optional env:
 ```
 ALLOW_ANON=true
 ANTHROPIC_API_KEY=your_anthropic_key
