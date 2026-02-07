@@ -31,4 +31,4 @@ services:
     plan: starter
     envVars:
       - key: BACKEND_URL
-        value: https://carepilot-backend.onrender.com
+        value: "https://carepilot-backend.onrender.com"
