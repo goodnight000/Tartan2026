@@ -919,10 +919,10 @@ export default function OnboardingPage() {
     }
 
     setSaveStatus("saving");
-    const cleaned = {
+    const cleaned = stripUndefined({
       ...values,
       meds: values.meds.filter((med) => med.name?.trim()),
-    };
+    });
     const timezone =
       Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
