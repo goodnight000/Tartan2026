@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import { consumeSSE } from "@/lib/sse";
 import { pullCloudToLocal } from "@/lib/carebase/cloud";
 
 const LOCATION_STORAGE_KEY = "carepilot.location_text";
+const DEBUG_SHOW_RAW_KEY = "carepilot.debug_show_raw";
 
 const EMERGENCY_KEYWORDS = [
   "call 911", "emergency room", "go to the er", "chest pain",
@@ -89,6 +91,8 @@ export function ChatPanel() {
   const [voiceStatus, setVoiceStatus] = useState<{ message: string; isError: boolean } | null>(
     null
   );
+  const [showRawOutput, setShowRawOutput] = useState(false);
+  const searchParams = useSearchParams();
   const [guardRequest, setGuardRequest] = useState<CareBaseRequest | null>(null);
   const [guardOpen, setGuardOpen] = useState(false);
   const decisionRef = useRef<((decision: AccessDecision) => void) | null>(null);
@@ -146,6 +150,19 @@ export function ChatPanel() {
   useEffect(() => {
     void pullCloudToLocal();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const queryValue = searchParams?.get("debug_raw");
+    if (queryValue) {
+      const normalized = queryValue.toLowerCase();
+      const enabled = normalized === "1" || normalized === "true" || normalized === "yes";
+      setShowRawOutput(enabled);
+      return;
+    }
+    const stored = window.localStorage.getItem(DEBUG_SHOW_RAW_KEY);
+    setShowRawOutput(stored === "1");
+  }, [searchParams]);
 
   const modeHint = useMemo(() => {
     if (mode === "document") {
@@ -219,7 +236,7 @@ export function ChatPanel() {
         if (delta) {
           streamed = true;
           fullContent += delta;
-          if (!sawCarebaseStart) {
+          if (!showRawOutput && !sawCarebaseStart) {
             const tagIndex = delta.indexOf("<carebase-");
             if (tagIndex !== -1) {
               sawCarebaseStart = true;
@@ -228,6 +245,8 @@ export function ChatPanel() {
             } else {
               appendAssistantDelta(delta);
             }
+          } else if (showRawOutput) {
+            appendAssistantDelta(delta);
           }
         }
       }
@@ -272,10 +291,14 @@ export function ChatPanel() {
         if (!reply.trim()) break;
 
         if (!streamed) {
-          const tagIndex = reply.indexOf("<carebase-");
-          const visible = tagIndex === -1 ? reply : reply.slice(0, tagIndex).trim();
-          if (visible) {
-            appendMessage({ role: "assistant", content: visible });
+          if (showRawOutput) {
+            appendMessage({ role: "assistant", content: reply });
+          } else {
+            const tagIndex = reply.indexOf("<carebase-");
+            const visible = tagIndex === -1 ? reply : reply.slice(0, tagIndex).trim();
+            if (visible) {
+              appendMessage({ role: "assistant", content: visible });
+            }
           }
         } else {
           finalizeStreaming();
@@ -374,6 +397,20 @@ export function ChatPanel() {
             <h2 className="text-3xl leading-none">Clinical Dialogue</h2>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={showRawOutput ? "default" : "ghost"}
+              onClick={() => {
+                const next = !showRawOutput;
+                setShowRawOutput(next);
+                if (typeof window !== "undefined") {
+                  window.localStorage.setItem(DEBUG_SHOW_RAW_KEY, next ? "1" : "0");
+                }
+              }}
+            >
+              {showRawOutput ? "Hide Raw" : "Show Raw"}
+            </Button>
             {triageLevel && <TriageBadge level={triageLevel} />}
             {!triageLevel && <span className="status-chip status-chip--info">Triage Active</span>}
           </div>
@@ -427,7 +464,7 @@ export function ChatPanel() {
                   }`}
                 >
                   {msg.role === "assistant" ? (
-                    <Markdown content={stripCareBaseTags(msg.content)} />
+                    <Markdown content={showRawOutput ? msg.content : stripCareBaseTags(msg.content)} />
                   ) : (
                     msg.content
                   )}

@@ -1,10 +1,14 @@
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+const ANTHROPIC_MAX_TOKENS = Number.parseInt(process.env.ANTHROPIC_MAX_TOKENS || "2000", 10);
+const SAFE_MAX_TOKENS = Number.isFinite(ANTHROPIC_MAX_TOKENS) && ANTHROPIC_MAX_TOKENS > 0
+  ? ANTHROPIC_MAX_TOKENS
+  : 2000;
 
 const encoder = new TextEncoder();
 
@@ -77,7 +81,7 @@ export async function POST(req: NextRequest) {
       model: ANTHROPIC_MODEL,
       messages,
       temperature: 0.2,
-      max_tokens: 800,
+      max_tokens: SAFE_MAX_TOKENS,
       stream: true,
       system: systemPrompt,
     }),

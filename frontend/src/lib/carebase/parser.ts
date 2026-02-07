@@ -1,7 +1,7 @@
 import type { CareBaseCommand, CareBaseParseResult } from './types';
 
 const COMMAND_PATTERN =
-  /<carebase-(fetch|delete|query)>([\s\S]*?)<\/carebase-\1>|<carebase-store:\s*([^>]+?)\s*>([\s\S]*?)<\/carebase-store>|<carebase-list>\s*<\/carebase-list>/gi;
+  /<carebase-(fetch|delete|query)>([\s\S]*?)<\/carebase-\1>|<carebase-store:\s*([^>]+?)\s*>([\s\S]*?)<\/carebase-store(?:\s*:\s*[^>]+?)?>|<carebase-list>\s*<\/carebase-list>/gi;
 
 function normalizeContent(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
