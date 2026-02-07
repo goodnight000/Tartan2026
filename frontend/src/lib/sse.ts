@@ -3,32 +3,98 @@ export type SSEEvent = {
   data: unknown;
 };
 
+type ConsumeSSEOptions = {
+  signal?: AbortSignal;
+};
+
+function normalizeLineEndings(value: string): string {
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function createAbortError(): Error {
+  const error = new Error("The operation was aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
+function findEventBoundary(buffer: string): { index: number; length: number } | null {
+  const lfIndex = buffer.indexOf("\n\n");
+  const crlfIndex = buffer.indexOf("\r\n\r\n");
+  if (lfIndex === -1 && crlfIndex === -1) return null;
+  if (lfIndex === -1) return { index: crlfIndex, length: 4 };
+  if (crlfIndex === -1) return { index: lfIndex, length: 2 };
+  if (lfIndex < crlfIndex) return { index: lfIndex, length: 2 };
+  return { index: crlfIndex, length: 4 };
+}
+
+function shouldDispatchTrailingChunk(chunk: string): boolean {
+  const lines = normalizeLineEndings(chunk)
+    .split("\n")
+    .filter((line) => line && !line.startsWith(":"));
+  if (!lines.length) return false;
+
+  const dataLines: string[] = [];
+  for (const line of lines) {
+    const separator = line.indexOf(":");
+    const field = separator === -1 ? line : line.slice(0, separator);
+    let value = separator === -1 ? "" : line.slice(separator + 1);
+    if (value.startsWith(" ")) value = value.slice(1);
+    if (field === "data") dataLines.push(value);
+  }
+
+  if (!dataLines.length) return true;
+  const data = dataLines.join("\n").trim();
+  if (!data) return true;
+  const firstChar = data[0];
+  if (firstChar === "{" || firstChar === "[") {
+    try {
+      JSON.parse(data);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 function parseSSEChunk(
   chunk: string,
   onEvent: (event: SSEEvent) => void
 ) {
-  const lines = chunk.split("\n");
+  const lines = normalizeLineEndings(chunk).split("\n");
   let eventType = "message";
-  let data = "";
+  const dataLines: string[] = [];
+
   for (const line of lines) {
-    if (line.startsWith("event:")) {
-      eventType = line.replace("event:", "").trim();
-    } else if (line.startsWith("data:")) {
-      data += line.replace("data:", "").trim();
+    if (!line || line.startsWith(":")) continue;
+    const separator = line.indexOf(":");
+    const field = separator === -1 ? line : line.slice(0, separator);
+    let value = separator === -1 ? "" : line.slice(separator + 1);
+    if (value.startsWith(" ")) value = value.slice(1);
+    if (field === "event") {
+      eventType = value.trim() || "message";
+    } else if (field === "data") {
+      dataLines.push(value);
     }
   }
+
+  const data = dataLines.join("\n");
   let parsed: unknown = data;
-  try {
-    parsed = JSON.parse(data);
-  } catch {
-    parsed = data;
+  if (data) {
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      parsed = data;
+    }
   }
+
   onEvent({ event: eventType, data: parsed });
 }
 
 export async function consumeSSE(
   response: Response,
-  onEvent: (event: SSEEvent) => void
+  onEvent: (event: SSEEvent) => void,
+  options?: ConsumeSSEOptions
 ) {
   if (!response.ok) {
     let detail = "";
@@ -48,25 +114,56 @@ export async function consumeSSE(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const signal = options?.signal;
   let buffer = "";
+  const onAbort = () => {
+    void reader.cancel();
+  };
 
   try {
+    if (signal?.aborted) {
+      throw createAbortError();
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+
     while (true) {
+      if (signal?.aborted) throw createAbortError();
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) {
+        if (signal?.aborted) throw createAbortError();
+        break;
+      }
       buffer += decoder.decode(value, { stream: true });
 
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary !== -1) {
-        const chunk = buffer.slice(0, boundary).trim();
-        buffer = buffer.slice(boundary + 2);
-        if (chunk.length) {
-          parseSSEChunk(chunk, onEvent);
+      let boundary = findEventBoundary(buffer);
+      while (boundary) {
+        const chunk = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary.length);
+        if (chunk.trim().length) {
+          try {
+            parseSSEChunk(chunk, onEvent);
+          } catch (error) {
+            void reader.cancel();
+            throw error;
+          }
         }
-        boundary = buffer.indexOf("\n\n");
+        boundary = findEventBoundary(buffer);
+      }
+    }
+
+    if (signal?.aborted) throw createAbortError();
+    buffer += decoder.decode();
+    const trailing = normalizeLineEndings(buffer);
+    if (trailing.trim().length && shouldDispatchTrailingChunk(trailing)) {
+      try {
+        parseSSEChunk(trailing, onEvent);
+      } catch (error) {
+        void reader.cancel();
+        throw error;
       }
     }
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     reader.releaseLock();
   }
 }
@@ -90,7 +187,7 @@ export function consumeSSEWithReconnect(
       try {
         const response = await openStream(controller.signal);
         attempts = 0; // reset on successful connection
-        await consumeSSE(response, onEvent);
+        await consumeSSE(response, onEvent, { signal: controller.signal });
         break; // stream ended normally
       } catch (error) {
         if (controller.signal.aborted) break;
