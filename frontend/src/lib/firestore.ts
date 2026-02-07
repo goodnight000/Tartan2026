@@ -194,7 +194,10 @@ function normalizeProfileValue(profile: MedicalProfile): MedicalProfile {
 }
 
 export async function getProfile(userId: string): Promise<MedicalProfile | null> {
-  const direct = await getOrPull(profileKey(userId), legacyKey(profileKey(userId), userId));
+  const direct = await getOrPull<MedicalProfile>(
+    profileKey(userId),
+    legacyKey(profileKey(userId), userId)
+  );
   if (direct) return normalizeProfileValue(direct);
   try {
     await pullCloudToLocal();

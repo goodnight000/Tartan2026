@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   if (siteUrl) headers["HTTP-Referer"] = siteUrl;
   if (appName) headers["X-Title"] = appName;
 
-  const prompt = `You are a health coach. Create a 7-day plan with daily actions to maintain health.\n\nProfile: ${JSON.stringify(
+  const prompt = `You are a health coach for patients/caregivers. Create a 7-day plan with daily actions to maintain health.\n\nProfile: ${JSON.stringify(
     body.profile ?? {}
   )}\n\nReminders: ${JSON.stringify(body.reminders ?? [])}\n\nReturn JSON with shape: {"summary": string, "days": [{"day": string, "actions": string[]}]}`;
 

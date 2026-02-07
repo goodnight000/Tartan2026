@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   decodeMasterKey,
-  decryptWithKey,
+  decryptValue,
   encodeMasterKey,
   generateEncryptionKey,
   getOrCreateMasterKey,
@@ -66,7 +66,7 @@ export function SupportToolsPanel() {
       }
       const encryptionKey = base64ToBytes(encryptionKeyInput);
       const ciphertext = base64ToBytes(ciphertextInput);
-      const plaintext = await decryptWithKey(ciphertext, encryptionKey);
+      const plaintext = await decryptValue(encryptionKey, ciphertext);
       setDecryptedOutput(plaintext);
       setStatus("Decryption successful.");
     } catch (error) {

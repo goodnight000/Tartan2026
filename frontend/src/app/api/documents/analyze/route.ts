@@ -11,6 +11,9 @@ type DocumentAnalysisResponse = {
   abnormal_highlights: string[];
   follow_up_questions: string[];
   urgency?: string;
+  llm_used?: boolean;
+  llm_provider?: string;
+  llm_error?: string;
 };
 
 function joinUrl(baseUrl: string, path: string): string {
@@ -114,6 +117,23 @@ function normalizeDocumentResponse(payload: unknown): DocumentAnalysisResponse |
         ? data.document_id.trim()
       : undefined;
   const riskFlagsFromSafety = safetyFraming ? toStringArray(safetyFraming.high_risk_flags) : [];
+  const extraction =
+    data.extraction && typeof data.extraction === "object"
+      ? (data.extraction as Record<string, unknown>)
+      : null;
+  const llmUsed = typeof extraction?.llm_used === "boolean" ? extraction.llm_used : undefined;
+  const llmProvider =
+    typeof extraction?.llm_provider === "string" && extraction.llm_provider.trim().length > 0
+      ? extraction.llm_provider.trim()
+      : typeof data.llm_provider === "string" && data.llm_provider.trim().length > 0
+        ? data.llm_provider.trim()
+        : undefined;
+  const llmError =
+    typeof extraction?.llm_error === "string" && extraction.llm_error.trim().length > 0
+      ? extraction.llm_error.trim()
+      : typeof data.llm_error === "string" && data.llm_error.trim().length > 0
+        ? data.llm_error.trim()
+        : undefined;
 
   return {
     summary: summary.trim(),
@@ -122,6 +142,9 @@ function normalizeDocumentResponse(payload: unknown): DocumentAnalysisResponse |
     follow_up_questions: followUpQuestions,
     ...(urgency ? { urgency } : {}),
     ...(fileId ? { file_id: fileId } : {}),
+    ...(llmUsed !== undefined ? { llm_used: llmUsed } : {}),
+    ...(llmProvider ? { llm_provider: llmProvider } : {}),
+    ...(llmError ? { llm_error: llmError } : {}),
   };
 }
 

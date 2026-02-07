@@ -276,7 +276,7 @@ export default function ProfilePage() {
   const handlePullFromCloud = async () => {
     setSyncStatus("Pulling encrypted records...");
     try {
-      await pullCloudToLocal();
+      await pullCloudToLocal({ strict: true });
       await Promise.all([profileQuery.refetch(), symptomsQuery.refetch(), actionsQuery.refetch()]);
       setSyncStatus("Local cache refreshed from cloud.");
       push({ title: "Cloud synced", description: "Local CareBase refreshed.", variant: "success" });

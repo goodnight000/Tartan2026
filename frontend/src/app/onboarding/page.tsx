@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -566,7 +566,7 @@ function buildPayload(
   } satisfies Omit<MedicalProfile, "user_id" | "updated_at">;
 }
 
-export default function OnboardingPage() {
+function OnboardingPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { push } = useToast();
@@ -906,6 +906,16 @@ export default function OnboardingPage() {
   }, [form, performSave, ready, step.id, trackEvent, user]);
 
   const advanceStep = async (values: FormValues, skipped: boolean) => {
+    if (!user) {
+      push({
+        title: "Sign in required",
+        description: "Please sign in before continuing onboarding.",
+        variant: "error",
+      });
+      setSaveStatus("error");
+      return;
+    }
+
     const duration = Date.now() - stepStartRef.current;
     trackEvent("onboarding_step_completed", {
       step_id: step.id,
@@ -919,10 +929,8 @@ export default function OnboardingPage() {
     }
 
     setSaveStatus("saving");
-    const cleaned = stripUndefined({
-      ...values,
-      meds: values.meds.filter((med) => med.name?.trim()),
-    });
+    const payload = buildPayload(values, existingProfile, step.id, false);
+    const cleaned = stripUndefined(payload);
     const timezone =
       Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
@@ -1763,5 +1771,19 @@ export default function OnboardingPage() {
         </AnimatePresence>
       </Card>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-5xl p-8 text-sm text-[color:var(--cp-muted)]">
+          Loading onboarding...
+        </div>
+      }
+    >
+      <OnboardingPageInner />
+    </Suspense>
   );
 }

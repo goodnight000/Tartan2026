@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Phone, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { TriageBadge } from "@/components/TriageBadge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TriageLevel } from "@/lib/types";
 
@@ -41,17 +40,6 @@ export function TriageCard({
           <TriageBadge level={level} />
           <p className="text-sm text-[color:var(--cp-text)]">{summary}</p>
         </div>
-        {isEmergent && (
-          <Button
-            variant="danger"
-            size="sm"
-            className="shrink-0"
-            type="button"
-          >
-            <Phone className="h-3.5 w-3.5" aria-hidden="true" />
-            Call 911
-          </Button>
-        )}
       </div>
 
       {actions && actions.length > 0 && (

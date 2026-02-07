@@ -25,15 +25,8 @@ import { pullCloudToLocal } from "@/lib/carebase/cloud";
 
 const LOCATION_STORAGE_KEY = "carepilot.location_text";
 
-const EMERGENCY_KEYWORDS = [
-  "call 911", "emergency room", "go to the er", "chest pain",
-  "difficulty breathing", "severe bleeding", "stroke", "unconscious",
-  "anaphylaxis", "overdose", "suicidal",
-];
-
 function inferTriageFromContent(text: string): TriageLevel | null {
   const lower = text.toLowerCase();
-  if (EMERGENCY_KEYWORDS.some((kw) => lower.includes(kw))) return "EMERGENT";
   if (lower.includes("within 24 hours") || lower.includes("urgent") || lower.includes("see a doctor soon")) return "URGENT_24H";
   if (lower.includes("routine") || lower.includes("follow up") || lower.includes("at your next visit")) return "ROUTINE";
   return null;
@@ -368,7 +361,7 @@ export function ChatPanel() {
           finalizeStreaming();
         }
         const inferred = inferTriageFromContent(reply);
-        if (inferred) setTriageLevel(inferred);
+        setTriageLevel(inferred);
 
         const contextText = [
           ...workingHistory,
