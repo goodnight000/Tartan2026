@@ -105,6 +105,110 @@ Features are organized by the phase in which they deliver value to the user.
 
 ---
 
+### 4.0 Prevention Intelligence System (Cross-Cutting)
+
+This system is the core preventive layer for all user types. It combines passive-first tracking, care-gap detection, and progression risk monitoring to help users prevent avoidable health deterioration and missed care.
+
+#### 4.0.1 Prevention Targets (What the App Is Trying to Prevent)
+
+**Priority:** P0 (Must-have for launch)
+
+The prevention system must explicitly target four categories:
+
+1. **Missed preventive care:** missed screenings, missed follow-up after abnormal results, incomplete referrals.
+2. **Condition progression:** worsening cardiometabolic, thyroid, PCOS, respiratory, and mental health risk signals over time.
+3. **Medication-related harm:** interaction risk, side-effect patterns, and non-adherence for high-impact medications.
+4. **Care coordination failures:** unresolved tasks between providers, appointments, and diagnostics.
+
+The prevention system must remain informational and non-diagnostic. Output language should be "risk trend" and "care gap" framing, never definitive diagnosis.
+
+#### 4.0.2 Data Tracking Model (Passive-First + Progressive Profiling)
+
+**Priority:** P0 (Must-have for launch)
+
+Data collection should start with low-friction passive inputs and expand only when additional data materially improves prevention quality.
+
+**Core data tracked for all users (required):**
+- Demographics: age, sex at birth, pregnancy-relevant status when applicable.
+- Health history: conditions, surgeries, hospitalizations, allergies.
+- Family history: first-degree relative history and age of onset where known.
+- Medications/supplements: name, dose, frequency, start/stop dates, adherence signal.
+- Vitals: weight trend, blood pressure trend, resting heart rate where available.
+- Labs: A1C/glucose, lipids, thyroid panel, kidney/liver markers when available.
+- Prevention history: prior screenings, vaccines, due dates, follow-up status.
+- Utilization: missed appointments, unresolved referrals, pending labs.
+- Behavioral baseline: activity, sleep, smoking/alcohol, stress/mood pulse.
+- User preferences: notification cadence, quiet hours, alert sensitivity.
+
+**Optional modules (enabled by relevance):**
+- Women's health module: menstrual cycle trend, fertility goals, menopause stage, pregnancy/postpartum context.
+- Thyroid module: TSH + free T4/T3 trend, thyroid medication adjustment history, symptom cluster trend.
+- PCOS module: cycle irregularity trend, androgen-related symptom trend, insulin resistance markers.
+- Cardiometabolic module: home BP density, CGM integration (if connected), waist circumference (optional), weight velocity.
+- Caregiver/family module: dependent profile tasks, consent state, shared reminders, unresolved multi-profile care tasks.
+
+**Data intake methods:**
+- Passive-first ingestion: Apple HealthKit/Google Health Connect/wearables where available.
+- Structured extraction: OCR and parser pipeline from uploaded labs/visit notes.
+- Lightweight prompts: weekly 30-second check-in, event-triggered clarification questions.
+- Progressive profiling: never ask for non-essential data at signup.
+
+#### 4.0.3 Prevention Risk Engine (Insight + Confidence-Gated Risk Bands)
+
+**Priority:** P0 (Must-have for launch)
+
+The engine computes four independent risk lanes and surfaces either insight-only nudges or confidence-gated risk bands.
+
+**Risk lanes:**
+- Care-gap risk
+- Progression risk
+- Medication safety risk
+- Coordination risk
+
+**Risk band policy:**
+- Low: 0–29
+- Medium: 30–59
+- High: 60+
+
+**Confidence gate:**
+- If model confidence is below threshold (initial recommendation: 0.70), show insight-only guidance.
+- Risk bands are shown only when confidence threshold is met and explanation quality is sufficient.
+
+**Example scoring signals:**
+- Overdue screening and unresolved follow-up windows.
+- Trend deltas (A1C rise, BP elevation persistence, weight velocity, thyroid marker drift).
+- Medication interaction severity and side-effect timing after regimen changes.
+- Missed referrals, missing labs, repeated appointment no-shows.
+
+#### 4.0.4 Prevention Triggering, Alerting, and Guardrails
+
+**Priority:** P0 (Must-have for launch)
+
+**Trigger types:**
+- Scheduled scan: daily care-gap and trend scan.
+- Event-triggered: new lab result, medication change, missed appointment, document upload, abnormal trend crossing.
+- Weekly summary: personalized prevention recap with next best actions.
+
+**Alert policy (balanced sensitivity):**
+- Maximum 1 alert/day, maximum 3 alerts/week.
+- Topic cooldowns: Low risk (14 days), Medium risk (7 days), High risk (72 hours, capped repeats).
+- Respect quiet hours and user mute preferences.
+- Every alert must include one clear action ("book follow-up," "review meds," "prepare questions for clinician").
+
+**Guardrails:**
+- No diagnostic claims, no treatment directives, no disease labeling.
+- Emergency language routing for red-flag user queries.
+- Every prevention output includes plain-language context and "consult your clinician" guidance.
+
+**Acceptance Criteria:**
+- 70%+ of active users receive at least one relevant prevention insight within 30 days.
+- 50%+ of prevention alerts are rated helpful/very helpful.
+- 25%+ of identified care gaps are closed within 60 days of first alert.
+- <10% of users disable prevention alerts in first month.
+- False-alarm complaints on prevention alerts remain below 5% of alerted users/month.
+
+---
+
 ### 4.1 Immediate Value Features (First Session)
 
 #### 4.1.1 Smart Health Profile Onboarding
@@ -419,6 +523,21 @@ Agentic features — where the app takes action on behalf of the user — repres
 - Document analysis (Explain This) completed in under 15 seconds.
 - App launch to interactive state in under 2 seconds.
 
+### 6.5 Prevention Intelligence Infrastructure
+- Rules + model hybrid prevention engine with four independent lanes: care-gap, progression, medication safety, and coordination.
+- Feature store for longitudinal risk signals and freshness windows (e.g., stale lab detection).
+- Confidence scoring layer to gate risk-band exposure (insight-only fallback when confidence is low).
+- Event bus for prevention triggers (new labs, med changes, no-shows, missed follow-up windows, uploaded documents).
+- Explainability service that returns the specific signals used for each prevention alert.
+- Cooldown and frequency policy service to enforce anti-fatigue limits (max 1/day, max 3/week).
+
+### 6.6 Data Collection & Quality Requirements
+- Passive-first ingestion priority: HealthKit/Health Connect/wearables, documents, and calendar.
+- Progressive profiling engine: ask only for missing fields that improve a specific prevention decision.
+- Data quality checks for outliers, unit normalization, duplicate events, and contradictory medication entries.
+- Per-signal confidence metadata persisted for all prevention outputs and analytics.
+- Human-review sampling workflow for prevention outputs to monitor false positives and unsafe phrasing.
+
 ---
 
 ## 7. Privacy, Security & Compliance (Research-Validated)
@@ -517,6 +636,7 @@ The first state enforcement action against a healthcare AI company. Pieces was t
 - Full persistent health memory and personalized Q&A.
 - Unlimited appointment prep sheets.
 - Proactive health nudges.
+- Prevention Intelligence System (care-gap detection + confidence-gated risk bands).
 - Document Explainer (Explain This).
 - Medication & supplement intelligence.
 - Symptom logging with pattern detection.
@@ -560,19 +680,29 @@ The first state enforcement action against a healthcare AI company. Pieces was t
 | Nudge engagement rate (tapped or acted on) | 30%+ |
 | Document Explainer usage (monthly, paid users) | 2+ per user |
 
+### Prevention-Specific Metrics
+| Metric | Target |
+|---|---|
+| Users receiving at least one prevention insight in first 30 days | 70%+ of active users |
+| Prevention alert helpfulness (helpful/very helpful) | 50%+ |
+| Care-gap closure rate within 60 days of first alert | 25%+ |
+| Risk-band display coverage with confidence >= 0.70 | 60%+ of prevention-eligible users |
+| False-alarm complaint rate on prevention alerts | < 5% of alerted users/month |
+| Prevention alert disable rate in first month | < 10% |
+
 ---
 
 ## 10. Launch Plan Overview
 
 ### Phase 1: Closed Beta (Month 1–2)
 - 200–500 users recruited from PCOS and thyroid online communities (r/PCOS, r/hypothyroidism, condition-specific Facebook groups, Instagram health influencers in the PCOS/thyroid space).
-- Core features: onboarding, health timeline, personalized Q&A, appointment prep, proactive nudges.
+- Core features: onboarding, health timeline, personalized Q&A, appointment prep, proactive nudges, Prevention Intelligence System (insight-first + confidence-gated risk bands).
 - Focus: validate Day 1 experience, measure retention, gather qualitative feedback.
 - Recruitment strategy: genuine community participation first, organic discovery, direct outreach to active community members.
 
 ### Phase 2: Open Beta (Month 3–4)
 - Expand to 5,000–10,000 users, still focused on chronic condition patients (broaden to diabetes, autoimmune).
-- Add: medication intelligence, symptom logging, document explainer.
+- Add: medication intelligence, symptom logging, document explainer, expanded prevention modules (cardiometabolic and caregiver signals).
 - Begin content marketing: short-form video, blog posts, and social threads targeting condition-specific health navigation pain points (e.g., "How to read your thyroid panel," "Questions to ask your endocrinologist about PCOS").
 - Focus: validate free-to-paid conversion, optimize nudge effectiveness, stress test infrastructure.
 
